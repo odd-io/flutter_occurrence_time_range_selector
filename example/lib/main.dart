@@ -33,10 +33,12 @@ class MyHomePage extends StatelessWidget {
     Random random = Random();
     List<TimeEvent> events = [];
 
+    print('Generating $count random events between $start and $end');
+    final t1 = DateTime.now().millisecondsSinceEpoch;
     for (int i = 0; i < count; i++) {
       DateTime randomDate = DateTime(
         start.year,
-        start.month + random.nextInt(2),
+        start.month + random.nextInt(end.month - start.month),
         start.day + random.nextInt(end.day - start.day),
         random.nextInt(24),
         random.nextInt(60),
@@ -46,6 +48,8 @@ class MyHomePage extends StatelessWidget {
       String randomTag = tags[random.nextInt(tags.length)];
       events.add(TimeEvent(tag: randomTag, dateTime: randomDate));
     }
+    final t2 = DateTime.now().millisecondsSinceEpoch;
+    print('Generated $count random events in ${t2 - t1} ms');
 
     return events;
   }
@@ -54,9 +58,9 @@ class MyHomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final events = generateRandomEvents(
       DateTime(2024, 1, 1),
-      DateTime(2024, 2, 28),
-      ['Class A', 'Class B', 'Class C'],
-      500,
+      DateTime(2024, 6, 28),
+      ['Class A', 'Class B', 'Class C', 'Class D', 'Class E'],
+      10000,
     );
 
     return Scaffold(
@@ -76,6 +80,8 @@ class MyHomePage extends StatelessWidget {
                 'Class A': TagStyle(color: Colors.blue),
                 'Class B': TagStyle(color: Colors.red),
                 'Class C': TagStyle(color: Colors.green),
+                'Class D': TagStyle(color: Colors.orange),
+                'Class E': TagStyle(color: Colors.purple),
               },
               onRangeChanged: (DateTime newStart, DateTime newEnd) {
                 print('New range: $newStart to $newEnd');
