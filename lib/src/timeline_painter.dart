@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
-import 'enums.dart';
 import 'grouped_event.dart';
 import 'label_info.dart';
 import 'tag_style.dart';
@@ -14,9 +13,10 @@ class TimelinePainter extends CustomPainter {
     required this.endDate,
     required this.events,
     required this.tagStyles,
-    required this.zoomLevel,
+    required this.zoomFactor,
     required this.style,
     required this.visibleLabels,
+    required this.getLabelInterval,
   });
 
   final DateTime endDate;
@@ -25,7 +25,8 @@ class TimelinePainter extends CustomPainter {
   final TimelineStyle style;
   final Map<String, TagStyle> tagStyles;
   final List<LabelInfo> visibleLabels;
-  final ZoomLevel zoomLevel;
+  final double zoomFactor;
+  final Function() getLabelInterval;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -55,7 +56,7 @@ class TimelinePainter extends CustomPainter {
   bool shouldRepaint(covariant TimelinePainter oldDelegate) {
     return startDate != oldDelegate.startDate ||
         endDate != oldDelegate.endDate ||
-        zoomLevel != oldDelegate.zoomLevel ||
+        zoomFactor != oldDelegate.zoomFactor ||
         visibleLabels != oldDelegate.visibleLabels;
   }
 
@@ -83,19 +84,22 @@ class TimelinePainter extends CustomPainter {
 
   void _drawStackedEventBars(
       Canvas canvas, Size size, double pixelsPerUnit, double labelHeight) {
-    final groupedEvents = _groupEventsByZoomLevel();
+    final groupedEvents = _groupEventsByZoomFactor();
     final maxTotalCount = groupedEvents.isNotEmpty
         ? groupedEvents.values
             .map((group) => group.fold(0, (sum, event) => sum + event.value))
             .reduce(math.max)
         : 0;
     final availableHeight = size.height - labelHeight;
-    final unitWidth = _getUnitWidthInMinutes() * pixelsPerUnit;
-    final unitHeight = availableHeight / maxTotalCount;
+    final unitHeight =
+        availableHeight / (maxTotalCount > 0 ? maxTotalCount : 1);
+
+    final labelInterval = getLabelInterval();
+    final barWidth = labelInterval.inMinutes * pixelsPerUnit;
 
     groupedEvents.forEach((dateTime, events) {
       final x = dateTime.difference(startDate).inMinutes * pixelsPerUnit;
-      double yOffset = availableHeight;
+      double yOffset = size.height - labelHeight;
 
       // Sort events alphabetically by tag
       events.sort((a, b) => a.tag.compareTo(b.tag));
@@ -107,7 +111,7 @@ class TimelinePainter extends CustomPainter {
           ..style = PaintingStyle.fill;
 
         canvas.drawRect(
-            Rect.fromLTWH(x, yOffset - barHeight, unitWidth, barHeight),
+            Rect.fromLTWH(x, yOffset - barHeight, barWidth, barHeight),
             barPaint);
 
         yOffset -= barHeight;
@@ -115,7 +119,7 @@ class TimelinePainter extends CustomPainter {
     });
   }
 
-  Map<DateTime, List<GroupedEvent>> _groupEventsByZoomLevel() {
+  Map<DateTime, List<GroupedEvent>> _groupEventsByZoomFactor() {
     final groupedEvents = <DateTime, List<GroupedEvent>>{};
 
     for (var event in events) {
@@ -141,33 +145,21 @@ class TimelinePainter extends CustomPainter {
   }
 
   DateTime _getGroupKeyForDate(DateTime date) {
-    switch (zoomLevel) {
-      case ZoomLevel.hour:
-        return DateTime(date.year, date.month, date.day, date.hour);
-      case ZoomLevel.day:
-        return DateTime(date.year, date.month, date.day);
-      case ZoomLevel.week:
-        final startOfWeek = date.subtract(Duration(days: date.weekday - 1));
-        return DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
-      case ZoomLevel.month:
-        return DateTime(date.year, date.month);
-      case ZoomLevel.year:
-        return DateTime(date.year);
-    }
-  }
-
-  int _getUnitWidthInMinutes() {
-    switch (zoomLevel) {
-      case ZoomLevel.hour:
-        return 60;
-      case ZoomLevel.day:
-        return 24 * 60;
-      case ZoomLevel.week:
-        return 7 * 24 * 60;
-      case ZoomLevel.month:
-        return 30 * 24 * 60; // Approximation
-      case ZoomLevel.year:
-        return 365 * 24 * 60; // Approximation
+    if (zoomFactor < 60) {
+      // Less than an hour per pixel
+      return DateTime(date.year, date.month, date.day, date.hour);
+    } else if (zoomFactor < 1440) {
+      // Less than a day per pixel
+      return DateTime(date.year, date.month, date.day);
+    } else if (zoomFactor < 10080) {
+      // Less than a week per pixel
+      final startOfWeek = date.subtract(Duration(days: date.weekday - 1));
+      return DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+    } else if (zoomFactor < 43200) {
+      // Less than a month per pixel
+      return DateTime(date.year, date.month);
+    } else {
+      return DateTime(date.year);
     }
   }
 }
