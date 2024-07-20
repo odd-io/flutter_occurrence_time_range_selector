@@ -4,14 +4,13 @@ import 'dart:math' as math;
 import 'grouped_event.dart';
 import 'label_info.dart';
 import 'tag_style.dart';
-import 'time_event.dart';
 import 'timeline_style.dart';
 
 class TimelinePainter extends CustomPainter {
   TimelinePainter({
     required this.startDate,
     required this.endDate,
-    required this.events,
+    required this.groupedEvents,
     required this.tagStyles,
     required this.zoomFactor,
     required this.style,
@@ -20,13 +19,13 @@ class TimelinePainter extends CustomPainter {
   });
 
   final DateTime endDate;
-  final List<TimeEvent> events;
+  final Function() getLabelInterval;
+  final Map<DateTime, List<GroupedEvent>> groupedEvents;
   final DateTime startDate;
   final TimelineStyle style;
   final Map<String, TagStyle> tagStyles;
   final List<LabelInfo> visibleLabels;
   final double zoomFactor;
-  final Function() getLabelInterval;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -84,7 +83,6 @@ class TimelinePainter extends CustomPainter {
 
   void _drawStackedEventBars(
       Canvas canvas, Size size, double pixelsPerUnit, double labelHeight) {
-    final groupedEvents = _groupEventsByZoomFactor();
     final maxTotalCount = groupedEvents.isNotEmpty
         ? groupedEvents.values
             .map((group) => group.fold(0, (sum, event) => sum + event.value))
@@ -117,49 +115,5 @@ class TimelinePainter extends CustomPainter {
         yOffset -= barHeight;
       }
     });
-  }
-
-  Map<DateTime, List<GroupedEvent>> _groupEventsByZoomFactor() {
-    final groupedEvents = <DateTime, List<GroupedEvent>>{};
-
-    for (var event in events) {
-      if (event.dateTime.isBefore(startDate) ||
-          event.dateTime.isAfter(endDate)) {
-        continue;
-      }
-
-      final groupKey = _getGroupKeyForDate(event.dateTime);
-      groupedEvents.putIfAbsent(groupKey, () => []);
-
-      final existingEvent = groupedEvents[groupKey]!
-          .firstWhere((e) => e.tag == event.tag, orElse: () {
-        final newEvent = GroupedEvent(tag: event.tag, value: 0);
-        groupedEvents[groupKey]!.add(newEvent);
-        return newEvent;
-      });
-
-      existingEvent.value++;
-    }
-
-    return groupedEvents;
-  }
-
-  DateTime _getGroupKeyForDate(DateTime date) {
-    if (zoomFactor < 60) {
-      // Less than an hour per pixel
-      return DateTime(date.year, date.month, date.day, date.hour);
-    } else if (zoomFactor < 1440) {
-      // Less than a day per pixel
-      return DateTime(date.year, date.month, date.day);
-    } else if (zoomFactor < 10080) {
-      // Less than a week per pixel
-      final startOfWeek = date.subtract(Duration(days: date.weekday - 1));
-      return DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
-    } else if (zoomFactor < 43200) {
-      // Less than a month per pixel
-      return DateTime(date.year, date.month);
-    } else {
-      return DateTime(date.year);
-    }
   }
 }

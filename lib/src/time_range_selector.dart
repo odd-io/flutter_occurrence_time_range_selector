@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'dart:math' as math;
 
+import 'grouped_event.dart';
 import 'label_info.dart';
 import 'tag_style.dart';
 import 'time_event.dart';
@@ -34,11 +35,13 @@ class TimeRangeSelector extends StatefulWidget {
 }
 
 class TimeRangeSelectorState extends State<TimeRangeSelector> {
-  late DateTime _currentStartDate;
   late DateTime _currentEndDate;
-  late double _zoomFactor; // minutes per pixel
+  Duration _currentGroupingInterval = Duration.zero;
+  late DateTime _currentStartDate;
+  Map<DateTime, List<GroupedEvent>> _groupedEvents = {};
   final List<LabelInfo> _visibleLabels = [];
   late double _widgetWidth;
+  late double _zoomFactor; // minutes per pixel
 
   @override
   void initState() {
@@ -46,7 +49,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     _currentStartDate = widget.startDate;
     _currentEndDate = widget.endDate;
     _zoomFactor = _calculateInitialZoomFactor();
-    _generateLabels();
+    _updateGroupedEvents();
   }
 
   double _calculateInitialZoomFactor() {
@@ -93,20 +96,6 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
             interval.inMilliseconds);
   }
 
-  Duration _getLabelInterval() {
-    if (_zoomFactor < 60) {
-      return Duration(hours: math.max(1, (_zoomFactor / 15).ceil()));
-    } else if (_zoomFactor < 1440) {
-      return Duration(days: math.max(1, (_zoomFactor / 360).ceil()));
-    } else if (_zoomFactor < 10080) {
-      return Duration(days: 7 * math.max(1, (_zoomFactor / 2520).ceil()));
-    } else if (_zoomFactor < 43200) {
-      return Duration(days: 30 * math.max(1, (_zoomFactor / 10800).ceil()));
-    } else {
-      return Duration(days: 365 * math.max(1, (_zoomFactor / 129600).ceil()));
-    }
-  }
-
   String _formatLabel(DateTime date) {
     final interval = _calculateDynamicLabelInterval();
     if (interval.inMinutes < 60) {
@@ -124,6 +113,56 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     }
   }
 
+  void _updateGroupedEvents() {
+    final newGroupingInterval = _calculateGroupingInterval();
+    if (newGroupingInterval != _currentGroupingInterval) {
+      _currentGroupingInterval = newGroupingInterval;
+      _groupedEvents =
+          _groupEventsByInterval(widget.events, _currentGroupingInterval);
+    }
+  }
+
+  Duration _calculateGroupingInterval() {
+    if (_zoomFactor < 1) return const Duration(minutes: 1);
+    if (_zoomFactor < 5) return const Duration(minutes: 5);
+    if (_zoomFactor < 15) return const Duration(minutes: 15);
+    if (_zoomFactor < 30) return const Duration(minutes: 30);
+    if (_zoomFactor < 60) return const Duration(hours: 1);
+    if (_zoomFactor < 120) return const Duration(hours: 2);
+    if (_zoomFactor < 360) return const Duration(hours: 6);
+    if (_zoomFactor < 720) return const Duration(hours: 12);
+    if (_zoomFactor < 1440) return const Duration(days: 1);
+    if (_zoomFactor < 10080) return const Duration(days: 7);
+    if (_zoomFactor < 43200) return const Duration(days: 30);
+    if (_zoomFactor < 129600) return const Duration(days: 90);
+    if (_zoomFactor < 259200) return const Duration(days: 180);
+    return const Duration(days: 365);
+  }
+
+  Map<DateTime, List<GroupedEvent>> _groupEventsByInterval(
+      List<TimeEvent> events, Duration interval) {
+    final groupedEvents = <DateTime, List<GroupedEvent>>{};
+
+    for (var event in events) {
+      final groupKey = DateTime.fromMillisecondsSinceEpoch(
+          (event.dateTime.millisecondsSinceEpoch ~/ interval.inMilliseconds) *
+              interval.inMilliseconds);
+
+      groupedEvents.putIfAbsent(groupKey, () => []);
+
+      final existingEvent = groupedEvents[groupKey]!
+          .firstWhere((e) => e.tag == event.tag, orElse: () {
+        final newEvent = GroupedEvent(tag: event.tag, value: 0);
+        groupedEvents[groupKey]!.add(newEvent);
+        return newEvent;
+      });
+
+      existingEvent.value++;
+    }
+
+    return groupedEvents;
+  }
+
   void _handleZoom(PointerSignalEvent event) {
     if (event is PointerScrollEvent) {
       setState(() {
@@ -138,6 +177,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
         _currentStartDate = middlePoint.subtract(newHalfRange);
         _currentEndDate = middlePoint.add(newHalfRange);
 
+        _updateGroupedEvents();
         _generateLabels();
       });
       widget.onRangeChanged?.call(_currentStartDate, _currentEndDate);
@@ -153,6 +193,16 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
       _generateLabels();
     });
     widget.onRangeChanged?.call(_currentStartDate, _currentEndDate);
+  }
+
+  Map<DateTime, List<GroupedEvent>> _getRelevantGroups() {
+    Map<DateTime, List<GroupedEvent>> selectedEvents = {};
+    for (var key in _groupedEvents.keys) {
+      if (key.isAfter(_currentStartDate) && key.isBefore(_currentEndDate)) {
+        selectedEvents[key] = _groupedEvents[key]!;
+      }
+    }
+    return selectedEvents;
   }
 
   @override
@@ -172,12 +222,12 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
                 painter: TimelinePainter(
                   startDate: _currentStartDate,
                   endDate: _currentEndDate,
-                  events: widget.events,
+                  groupedEvents: _getRelevantGroups(),
                   tagStyles: widget.tagStyles,
                   zoomFactor: _zoomFactor,
                   style: widget.style,
                   visibleLabels: _visibleLabels,
-                  getLabelInterval: _getLabelInterval,
+                  getLabelInterval: _calculateGroupingInterval,
                 ),
               ),
             ),
