@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -23,10 +24,39 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class MyHomePage extends StatelessWidget {
+class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
 
   final String title;
+
+  @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  Timer? _debounceTimer;
+  late DateTime _endDate;
+  late List<TimeEvent> _events;
+  late DateTime _startDate;
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _startDate = DateTime(2024, 1, 12);
+    _endDate = DateTime(2024, 2, 15);
+    _events = generateRandomEvents(
+      DateTime(2024, 1, 1),
+      DateTime(2024, 6, 28),
+      ['Class A', 'Class B', 'Class C', 'Class D', 'Class E'],
+      10000,
+    );
+  }
 
   List<TimeEvent> generateRandomEvents(
       DateTime start, DateTime end, List<String> tags, int count) {
@@ -58,28 +88,57 @@ class MyHomePage extends StatelessWidget {
     return events;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final events = generateRandomEvents(
-      DateTime(2024, 1, 1),
-      DateTime(2024, 6, 28),
-      ['Class A', 'Class B', 'Class C', 'Class D', 'Class E'],
-      10000,
+  void _showDateRangePicker() async {
+    DateTimeRange? pickedRange = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2024, 1, 1),
+      lastDate: DateTime(2024, 12, 31),
+      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
     );
 
+    if (pickedRange != null) {
+      _updateDateRange(pickedRange.start, pickedRange.end);
+    }
+  }
+
+  void _updateDateRange(DateTime newStart, DateTime newEnd) {
+    setState(() {
+      _startDate = newStart;
+      _endDate = newEnd;
+    });
+  }
+
+  void _debouncedUpdateDateRange(DateTime newStart, DateTime newEnd) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _updateDateRange(newStart, newEnd);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(title),
+        title: Text(widget.title),
       ),
       body: Column(
         children: [
-          const Expanded(child: SizedBox()),
+          Expanded(
+            child: Center(
+              child: ElevatedButton(
+                onPressed: _showDateRangePicker,
+                child: Text(
+                    'Select Date Range: ${_startDate.toString().substring(0, 10)} to ${_endDate.toString().substring(0, 10)}'),
+              ),
+            ),
+          ),
           Expanded(
             child: TimeRangeSelector(
-              startDate: DateTime(2024, 1, 12),
-              endDate: DateTime(2024, 2, 15),
-              events: events,
+              key: ValueKey('$_startDate-$_endDate'),
+              startDate: _startDate,
+              endDate: _endDate,
+              events: _events,
               tagStyles: const {
                 'Class A': TagStyle(color: Colors.blue),
                 'Class B': TagStyle(color: Colors.red),
@@ -89,6 +148,7 @@ class MyHomePage extends StatelessWidget {
               },
               onRangeChanged: (DateTime newStart, DateTime newEnd) {
                 print('New range: $newStart to $newEnd');
+                _debouncedUpdateDateRange(newStart, newEnd);
               },
               style: const TimelineStyle(
                 axisColor: Colors.black,
@@ -98,13 +158,12 @@ class MyHomePage extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(
-            height: 20,
-          ),
+          const SizedBox(height: 20),
           Expanded(
-              child: SizedBox(
-            child: SelectableText(events.toString()),
-          )),
+            child: SingleChildScrollView(
+              child: SelectableText(_events.toString()),
+            ),
+          ),
         ],
       ),
     );
