@@ -1,5 +1,5 @@
 name: flutter_occurrence_time_range_selector
-description: "Flutter widget that lets the user select a time range while displaying an events occurrence chart."
+description: "A highly interactive and customizable Flutter widget that allows users to select a time range while visualizing event occurrences on a dynamic chart."
 version: 0.0.1
 homepage: https://github.com/odd-io/flutter_occurrence_time_range_selector
 
