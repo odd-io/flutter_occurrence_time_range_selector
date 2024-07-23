@@ -42,7 +42,7 @@ class TimelinePainter extends CustomPainter {
 
     // Calculate the time range and pixel per time unit
     final totalDuration = endDate.difference(startDate);
-    final pixelsPerUnit = size.width / totalDuration.inMinutes;
+    final pixelsPerUnit = size.width / totalDuration.inMilliseconds;
 
     // Draw time labels
     _drawTimeLabels(canvas, size, pixelsPerUnit, labelHeight);
@@ -67,7 +67,8 @@ class TimelinePainter extends CustomPainter {
     );
 
     for (var label in visibleLabels) {
-      final x = label.dateTime.difference(startDate).inMinutes * pixelsPerUnit;
+      final x =
+          label.dateTime.difference(startDate).inMilliseconds * pixelsPerUnit;
 
       if (x >= 0 && x <= size.width) {
         labelPaint.text = TextSpan(
@@ -93,10 +94,10 @@ class TimelinePainter extends CustomPainter {
         availableHeight / (maxTotalCount > 0 ? maxTotalCount : 1);
 
     final labelInterval = getLabelInterval();
-    final barWidth = labelInterval.inMinutes * pixelsPerUnit;
+    final barWidth = labelInterval.inMilliseconds * pixelsPerUnit;
 
     groupedEvents.forEach((dateTime, events) {
-      final x = dateTime.difference(startDate).inMinutes * pixelsPerUnit;
+      final x = dateTime.difference(startDate).inMilliseconds * pixelsPerUnit;
       double yOffset = size.height - labelHeight;
 
       // Sort events alphabetically by tag

@@ -38,7 +38,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   Map<DateTime, List<GroupedEvent>> _groupedEvents = {};
   final List<LabelInfo> _visibleLabels = [];
   late double _widgetWidth;
-  late double _zoomFactor; // minutes per pixel
+  late double _zoomFactor; // milliseconds per pixel
 
   @override
   void initState() {
@@ -51,7 +51,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
 
   double _calculateInitialZoomFactor() {
     final range = _currentEndDate.difference(_currentStartDate);
-    return range.inMinutes / 1000; // Adjust this value as needed
+    return range.inMilliseconds / 1000;
   }
 
   void _generateLabels() {
@@ -69,21 +69,29 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   Duration _calculateDynamicLabelInterval() {
     // Aim for approximately 1 label per 100 pixels
     final desiredLabelCount = (_widgetWidth / 100).round();
-    final totalMinutes =
-        _currentEndDate.difference(_currentStartDate).inMinutes;
-    final minutesPerLabel = totalMinutes / desiredLabelCount;
+    final totalMilliseconds =
+        _currentEndDate.difference(_currentStartDate).inMilliseconds;
+    final millisecondsPerLabel = totalMilliseconds / desiredLabelCount;
 
     // Round to nearest sensible interval
-    if (minutesPerLabel < 60) {
-      return Duration(minutes: (minutesPerLabel / 5).ceil() * 5);
-    } else if (minutesPerLabel < 1440) {
-      return Duration(hours: (minutesPerLabel / 60).ceil());
-    } else if (minutesPerLabel < 10080) {
-      return Duration(days: (minutesPerLabel / 1440).ceil());
-    } else if (minutesPerLabel < 43200) {
-      return Duration(days: ((minutesPerLabel / 10080).ceil() * 7));
+    if (millisecondsPerLabel < 60000) {
+      // Less than a minute
+      return Duration(
+          milliseconds: (millisecondsPerLabel / 1000).ceil() * 1000);
+    } else if (millisecondsPerLabel < 3600000) {
+      // Less than an hour
+      return Duration(minutes: (millisecondsPerLabel / 60000).ceil());
+    } else if (millisecondsPerLabel < 86400000) {
+      // Less than a day
+      return Duration(hours: (millisecondsPerLabel / 3600000).ceil());
+    } else if (millisecondsPerLabel < 604800000) {
+      // Less than a week
+      return Duration(days: (millisecondsPerLabel / 86400000).ceil());
+    } else if (millisecondsPerLabel < 2592000000) {
+      // Less than a month
+      return Duration(days: ((millisecondsPerLabel / 604800000).ceil() * 7));
     } else {
-      return Duration(days: ((minutesPerLabel / 43200).ceil() * 30));
+      return Duration(days: ((millisecondsPerLabel / 2592000000).ceil() * 30));
     }
   }
 
@@ -120,19 +128,26 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   }
 
   Duration _calculateGroupingInterval() {
-    if (_zoomFactor < 1) return const Duration(minutes: 1);
-    if (_zoomFactor < 5) return const Duration(minutes: 5);
-    if (_zoomFactor < 15) return const Duration(minutes: 15);
-    if (_zoomFactor < 30) return const Duration(minutes: 30);
-    if (_zoomFactor < 60) return const Duration(hours: 1);
-    if (_zoomFactor < 120) return const Duration(hours: 2);
-    if (_zoomFactor < 360) return const Duration(hours: 6);
-    if (_zoomFactor < 720) return const Duration(hours: 12);
-    if (_zoomFactor < 1440) return const Duration(days: 1);
-    if (_zoomFactor < 10080) return const Duration(days: 7);
-    if (_zoomFactor < 43200) return const Duration(days: 30);
-    if (_zoomFactor < 129600) return const Duration(days: 90);
-    if (_zoomFactor < 259200) return const Duration(days: 180);
+    if (_zoomFactor < 1) return const Duration(milliseconds: 1);
+    if (_zoomFactor < 10) return const Duration(milliseconds: 10);
+    if (_zoomFactor < 100) return const Duration(milliseconds: 100);
+    if (_zoomFactor < 1000) return const Duration(seconds: 1);
+    if (_zoomFactor < 5000) return const Duration(seconds: 5);
+    if (_zoomFactor < 15000) return const Duration(seconds: 15);
+    if (_zoomFactor < 30000) return const Duration(seconds: 30);
+    if (_zoomFactor < 60000) return const Duration(minutes: 1);
+    if (_zoomFactor < 300000) return const Duration(minutes: 5);
+    if (_zoomFactor < 900000) return const Duration(minutes: 15);
+    if (_zoomFactor < 1800000) return const Duration(minutes: 30);
+    if (_zoomFactor < 3600000) return const Duration(hours: 1);
+    if (_zoomFactor < 7200000) return const Duration(hours: 2);
+    if (_zoomFactor < 21600000) return const Duration(hours: 6);
+    if (_zoomFactor < 43200000) return const Duration(hours: 12);
+    if (_zoomFactor < 86400000) return const Duration(days: 1);
+    if (_zoomFactor < 604800000) return const Duration(days: 7);
+    if (_zoomFactor < 2592000000) return const Duration(days: 30);
+    if (_zoomFactor < 7776000000) return const Duration(days: 90);
+    if (_zoomFactor < 15552000000) return const Duration(days: 180);
     return const Duration(days: 365);
   }
 
@@ -169,7 +184,8 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
         Duration currentRange = _currentEndDate.difference(_currentStartDate);
         DateTime middlePoint = _currentStartDate.add(currentRange ~/ 2);
         Duration newHalfRange = Duration(
-            minutes: (currentRange.inMinutes * zoomChange ~/ 2).round());
+            milliseconds:
+                (currentRange.inMilliseconds * zoomChange ~/ 2).round());
 
         _currentStartDate = middlePoint.subtract(newHalfRange);
         _currentEndDate = middlePoint.add(newHalfRange);
@@ -183,7 +199,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
 
   void _handlePan(DragUpdateDetails details) {
     Duration shiftDuration =
-        Duration(minutes: (_zoomFactor * -details.delta.dx).round());
+        Duration(milliseconds: (_zoomFactor * -details.delta.dx).round());
     setState(() {
       _currentStartDate = _currentStartDate.add(shiftDuration);
       _currentEndDate = _currentEndDate.add(shiftDuration);
