@@ -38,15 +38,19 @@ class MyHomePage extends StatelessWidget {
     for (int i = 0; i < count; i++) {
       DateTime randomDate = DateTime(
         start.year,
-        start.month + random.nextInt(end.month - start.month),
-        start.day + random.nextInt(end.day - start.day),
+        start.month + random.nextInt(end.month - start.month + 1),
+        random.nextInt(31) + 1,
         random.nextInt(24),
         random.nextInt(60),
         random.nextInt(60),
         random.nextInt(1000),
       );
-      String randomTag = tags[random.nextInt(tags.length)];
-      events.add(TimeEvent(tag: randomTag, dateTime: randomDate));
+      if (randomDate.isAfter(start) && randomDate.isBefore(end)) {
+        String randomTag = tags[random.nextInt(tags.length)];
+        events.add(TimeEvent(tag: randomTag, dateTime: randomDate));
+      } else {
+        i--;
+      }
     }
     final t2 = DateTime.now().millisecondsSinceEpoch;
     print('Generated $count random events in ${t2 - t1} ms');
