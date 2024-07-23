@@ -18,11 +18,15 @@ class TimeRangeSelector extends StatefulWidget {
     required this.tagStyles,
     this.onRangeChanged,
     required this.style,
+    this.minZoomFactor = 1,
+    this.maxZoomFactor = 31536000000,
   });
 
   final Function(DateTime, DateTime)? onRangeChanged;
   final DateTime endDate;
   final List<TimeEvent> events;
+  final double maxZoomFactor;
+  final double minZoomFactor;
   final DateTime startDate;
   final TimelineStyle style;
   final Map<String, TagStyle> tagStyles;
@@ -45,7 +49,10 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     super.initState();
     _currentStartDate = widget.startDate;
     _currentEndDate = widget.endDate;
-    _zoomFactor = _calculateInitialZoomFactor();
+    _zoomFactor = _calculateInitialZoomFactor().clamp(
+      widget.minZoomFactor,
+      widget.maxZoomFactor,
+    );
     _updateGroupedEvents();
   }
 
@@ -74,7 +81,9 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     final millisecondsPerLabel = totalMilliseconds / desiredLabelCount;
 
     // Round to nearest sensible interval
-    if (millisecondsPerLabel < 60000) {
+    if (millisecondsPerLabel < 1000) {
+      return Duration(milliseconds: (millisecondsPerLabel / 100).ceil() * 100);
+    } else if (millisecondsPerLabel < 60000) {
       // Less than a minute
       return Duration(
           milliseconds: (millisecondsPerLabel / 1000).ceil() * 1000);
@@ -103,14 +112,18 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
 
   String _formatLabel(DateTime date) {
     final interval = _calculateDynamicLabelInterval();
-    if (interval.inMinutes < 60) {
+    if (interval.inMilliseconds < 1000) {
+      return intl.DateFormat('HH:mm:ss.SSS').format(date);
+    } else if (interval.inMilliseconds < 60000) {
+      return intl.DateFormat('HH:mm:ss').format(date);
+    } else if (interval.inMinutes < 60) {
       return intl.DateFormat('HH:mm').format(date);
     } else if (interval.inHours < 24) {
       return intl.DateFormat('dd.MM HH:mm').format(date);
     } else if (interval.inDays < 7) {
       return intl.DateFormat('dd.MM').format(date);
     } else if (interval.inDays < 30) {
-      return 'Week ${((date.day - 1) ~/ 7) + 1}\n${intl.DateFormat('MMM').format(date)}';
+      return 'Week ${((date.day - 1) ~/ 7) + 1} ${intl.DateFormat('MMM').format(date)}';
     } else if (interval.inDays < 365) {
       return intl.DateFormat('MMM yyyy').format(date);
     } else {
@@ -177,15 +190,21 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
 
   void _handleZoom(PointerSignalEvent event) {
     if (event is PointerScrollEvent) {
-      setState(() {
-        double zoomChange = event.scrollDelta.dy > 0 ? 1.1 : 0.9;
-        _zoomFactor *= zoomChange;
+      double zoomChange = event.scrollDelta.dy > 0 ? 1.1 : 0.9;
+      final newZoomFactor = (_zoomFactor * zoomChange)
+          .clamp(widget.minZoomFactor, widget.maxZoomFactor);
+      if (newZoomFactor == _zoomFactor) {
+        return;
+      }
 
-        Duration currentRange = _currentEndDate.difference(_currentStartDate);
-        DateTime middlePoint = _currentStartDate.add(currentRange ~/ 2);
-        Duration newHalfRange = Duration(
-            milliseconds:
-                (currentRange.inMilliseconds * zoomChange ~/ 2).round());
+      Duration currentRange = _currentEndDate.difference(_currentStartDate);
+      DateTime middlePoint = _currentStartDate.add(currentRange ~/ 2);
+      Duration newHalfRange = Duration(
+          milliseconds:
+              (currentRange.inMilliseconds * zoomChange ~/ 2).round());
+
+      setState(() {
+        _zoomFactor = newZoomFactor;
 
         _currentStartDate = middlePoint.subtract(newHalfRange);
         _currentEndDate = middlePoint.add(newHalfRange);
