@@ -86,11 +86,6 @@ class MyHomePage extends StatelessWidget {
               onRangeChanged: (DateTime newStart, DateTime newEnd) {
                 print('New range: $newStart to $newEnd');
               },
-              onEventHover: (TimeEvent? event) {
-                if (event != null) {
-                  print('Hovered over: ${event.dateTime} - ${event.tag}');
-                }
-              },
               style: const TimelineStyle(
                 axisColor: Colors.black,
                 axisLabelStyle: TextStyle(fontSize: 18, color: Colors.black),

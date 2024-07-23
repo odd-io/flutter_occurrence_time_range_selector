@@ -1,7 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
-import 'dart:math' as math;
 
 import 'grouped_event.dart';
 import 'label_info.dart';
@@ -18,12 +17,10 @@ class TimeRangeSelector extends StatefulWidget {
     required this.events,
     required this.tagStyles,
     this.onRangeChanged,
-    this.onEventHover,
     required this.style,
   });
 
   final Function(DateTime, DateTime)? onRangeChanged;
-  final Function(TimeEvent?)? onEventHover;
   final DateTime endDate;
   final List<TimeEvent> events;
   final DateTime startDate;
