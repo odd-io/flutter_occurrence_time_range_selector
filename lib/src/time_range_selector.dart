@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 
 import 'grouped_event.dart';
+import 'highlight_group.dart';
 import 'label_info.dart';
 import 'tag_style.dart';
 import 'time_event.dart';
@@ -20,11 +21,13 @@ class TimeRangeSelector extends StatefulWidget {
     required this.style,
     this.minZoomFactor = 1,
     this.maxZoomFactor = 31536000000,
+    this.highlightGroups = const [],
   });
 
   final Function(DateTime, DateTime)? onRangeChanged;
   final DateTime endDate;
   final List<TimeEvent> events;
+  final List<HighlightGroup> highlightGroups;
   final double maxZoomFactor;
   final double minZoomFactor;
   final DateTime startDate;
@@ -188,6 +191,26 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     return groupedEvents;
   }
 
+  List<Widget> _buildHighlights(BoxConstraints constraints) {
+    final totalDuration = _currentEndDate.difference(_currentStartDate);
+    final pixelsPerUnit = constraints.maxWidth / totalDuration.inMilliseconds;
+
+    return widget.highlightGroups.expand((group) {
+      return group.dates.map((date) {
+        final x =
+            date.difference(_currentStartDate).inMilliseconds * pixelsPerUnit;
+        if (x >= 0 && x <= constraints.maxWidth) {
+          return Positioned(
+            left: x,
+            top: 0,
+            child: group.builder(context, Size(20, constraints.maxHeight)),
+          );
+        }
+        return const SizedBox.shrink();
+      });
+    }).toList();
+  }
+
   void _handleZoom(PointerSignalEvent event) {
     if (event is PointerScrollEvent) {
       double zoomChange = event.scrollDelta.dy > 0 ? 1.1 : 0.9;
@@ -243,27 +266,32 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
       builder: (context, constraints) {
         _widgetWidth = constraints.maxWidth;
         _generateLabels();
-        return Listener(
-          onPointerSignal: _handleZoom,
-          child: GestureDetector(
-            onPanUpdate: _handlePan,
-            child: Container(
-              color: widget.style.backgroundColor,
-              child: CustomPaint(
-                size: Size(constraints.maxWidth, constraints.maxHeight),
-                painter: TimelinePainter(
-                  startDate: _currentStartDate,
-                  endDate: _currentEndDate,
-                  groupedEvents: _getRelevantGroups(),
-                  tagStyles: widget.tagStyles,
-                  zoomFactor: _zoomFactor,
-                  style: widget.style,
-                  visibleLabels: _visibleLabels,
-                  getLabelInterval: _calculateGroupingInterval,
+        return Stack(
+          children: [
+            Listener(
+              onPointerSignal: _handleZoom,
+              child: GestureDetector(
+                onPanUpdate: _handlePan,
+                child: Container(
+                  color: widget.style.backgroundColor,
+                  child: CustomPaint(
+                    size: Size(constraints.maxWidth, constraints.maxHeight),
+                    painter: TimelinePainter(
+                      startDate: _currentStartDate,
+                      endDate: _currentEndDate,
+                      groupedEvents: _getRelevantGroups(),
+                      tagStyles: widget.tagStyles,
+                      zoomFactor: _zoomFactor,
+                      style: widget.style,
+                      visibleLabels: _visibleLabels,
+                      getLabelInterval: _calculateGroupingInterval,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
+            ..._buildHighlights(constraints),
+          ],
         );
       },
     );

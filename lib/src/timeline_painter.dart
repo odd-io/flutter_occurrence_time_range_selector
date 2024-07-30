@@ -29,6 +29,7 @@ class TimelinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    const highlightSpace = 20.0; // Space reserved for highlights at the top
     final axisPaint = Paint()
       ..color = style.axisColor
       ..style = PaintingStyle.stroke
@@ -48,7 +49,8 @@ class TimelinePainter extends CustomPainter {
     _drawTimeLabels(canvas, size, pixelsPerUnit, labelHeight);
 
     // Draw stacked event bars
-    _drawStackedEventBars(canvas, size, pixelsPerUnit, labelHeight);
+    _drawStackedEventBars(
+        canvas, size, pixelsPerUnit, labelHeight, highlightSpace);
   }
 
   @override
@@ -83,14 +85,14 @@ class TimelinePainter extends CustomPainter {
     }
   }
 
-  void _drawStackedEventBars(
-      Canvas canvas, Size size, double pixelsPerUnit, double labelHeight) {
+  void _drawStackedEventBars(Canvas canvas, Size size, double pixelsPerUnit,
+      double labelHeight, double highlightSpace) {
     final maxTotalCount = groupedEvents.isNotEmpty
         ? groupedEvents.values
             .map((group) => group.fold(0, (sum, event) => sum + event.value))
             .reduce(math.max)
         : 0;
-    final availableHeight = size.height - labelHeight;
+    final availableHeight = size.height - labelHeight - highlightSpace;
 
     final labelInterval = getLabelInterval();
     final barWidth = labelInterval.inMilliseconds * pixelsPerUnit;
