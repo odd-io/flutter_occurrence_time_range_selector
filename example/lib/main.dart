@@ -35,13 +35,13 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  bool _addEvents = false;
   Timer? _debounceTimer;
   late DateTime _endDate;
-  late List<TimeEvent> _events;
-  late DateTime _startDate;
-  ScaleType _scaleType = ScaleType.linear;
   final TextEditingController _eventCountController = TextEditingController();
-  bool _addEvents = false;
+  late List<TimeEvent> _events;
+  ScaleType _scaleType = ScaleType.linear;
+  late DateTime _startDate;
 
   @override
   void dispose() {
@@ -248,6 +248,25 @@ class _MyHomePageState extends State<MyHomePage> {
                 backgroundColor: Colors.white,
                 scaleType: _scaleType,
               ),
+              highlightGroups: [
+                HighlightGroup(
+                  dates: [DateTime(2024, 3, 1), DateTime(2024, 4, 15)],
+                  builder: (context, size) => const DotHighlight(),
+                ),
+                HighlightGroup(
+                  dates: [DateTime(2024, 7, 4), DateTime(2024, 1, 20)],
+                  builder: (context, size) =>
+                      const StarHighlight(color: Colors.amber),
+                ),
+                HighlightGroup(
+                  dates: [DateTime(2024, 5, 10)],
+                  builder: (context, size) => Container(
+                    width: 10,
+                    height: 10,
+                    color: Colors.blue.withOpacity(0.3),
+                  ),
+                ),
+              ],
             ),
           ),
           Padding(
