@@ -56,7 +56,9 @@ class TimelinePainter extends CustomPainter {
     return startDate != oldDelegate.startDate ||
         endDate != oldDelegate.endDate ||
         zoomFactor != oldDelegate.zoomFactor ||
-        visibleLabels != oldDelegate.visibleLabels;
+        visibleLabels != oldDelegate.visibleLabels ||
+        style.useLogarithmicScale !=
+            oldDelegate.style.useLogarithmicScale; // Add this check
   }
 
   void _drawTimeLabels(
@@ -90,8 +92,6 @@ class TimelinePainter extends CustomPainter {
             .reduce(math.max)
         : 0;
     final availableHeight = size.height - labelHeight;
-    final unitHeight =
-        availableHeight / (maxTotalCount > 0 ? maxTotalCount : 1);
 
     final labelInterval = getLabelInterval();
     final barWidth = labelInterval.inMilliseconds * pixelsPerUnit;
@@ -103,8 +103,34 @@ class TimelinePainter extends CustomPainter {
       // Sort events alphabetically by tag
       events.sort((a, b) => a.tag.compareTo(b.tag));
 
+      double totalBarHeight = 0;
+
+      // calculate total height of bars
       for (var event in events) {
-        final barHeight = event.value * unitHeight;
+        double barHeight;
+        if (style.useLogarithmicScale) {
+          barHeight = math.log(event.value + 1) / math.log(maxTotalCount + 1);
+        } else {
+          barHeight = event.value / maxTotalCount;
+        }
+        totalBarHeight += barHeight;
+      }
+
+      // Scale factor to ensure total height doesn't exceed available height
+      final scaleFactor = totalBarHeight > 1 ? 1 / totalBarHeight : 1;
+
+      for (var event in events) {
+        double barHeight;
+        if (style.useLogarithmicScale) {
+          barHeight =
+              (math.log(event.value + 1) / math.log(maxTotalCount + 1)) *
+                  scaleFactor *
+                  availableHeight;
+        } else {
+          barHeight =
+              (event.value / maxTotalCount) * scaleFactor * availableHeight;
+        }
+
         final barPaint = Paint()
           ..color = tagStyles[event.tag]?.color ?? Colors.grey
           ..style = PaintingStyle.fill;
