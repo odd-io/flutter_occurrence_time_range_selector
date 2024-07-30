@@ -57,8 +57,7 @@ class TimelinePainter extends CustomPainter {
         endDate != oldDelegate.endDate ||
         zoomFactor != oldDelegate.zoomFactor ||
         visibleLabels != oldDelegate.visibleLabels ||
-        style.useLogarithmicScale !=
-            oldDelegate.style.useLogarithmicScale; // Add this check
+        style.scaleType != oldDelegate.style.scaleType;
   }
 
   void _drawTimeLabels(
@@ -105,14 +104,8 @@ class TimelinePainter extends CustomPainter {
 
       double totalBarHeight = 0;
 
-      // calculate total height of bars
       for (var event in events) {
-        double barHeight;
-        if (style.useLogarithmicScale) {
-          barHeight = math.log(event.value + 1) / math.log(maxTotalCount + 1);
-        } else {
-          barHeight = event.value / maxTotalCount;
-        }
+        double barHeight = _calculateBarHeight(event.value, maxTotalCount);
         totalBarHeight += barHeight;
       }
 
@@ -120,16 +113,9 @@ class TimelinePainter extends CustomPainter {
       final scaleFactor = totalBarHeight > 1 ? 1 / totalBarHeight : 1;
 
       for (var event in events) {
-        double barHeight;
-        if (style.useLogarithmicScale) {
-          barHeight =
-              (math.log(event.value + 1) / math.log(maxTotalCount + 1)) *
-                  scaleFactor *
-                  availableHeight;
-        } else {
-          barHeight =
-              (event.value / maxTotalCount) * scaleFactor * availableHeight;
-        }
+        double barHeight = _calculateBarHeight(event.value, maxTotalCount) *
+            scaleFactor *
+            availableHeight;
 
         final barPaint = Paint()
           ..color = tagStyles[event.tag]?.color ?? Colors.grey
@@ -142,5 +128,16 @@ class TimelinePainter extends CustomPainter {
         yOffset -= barHeight;
       }
     });
+  }
+
+  double _calculateBarHeight(int value, int maxValue) {
+    switch (style.scaleType) {
+      case ScaleType.linear:
+        return value / maxValue;
+      case ScaleType.logarithmic:
+        return math.log(value + 1) / math.log(maxValue + 1);
+      case ScaleType.squareRoot:
+        return math.sqrt(value) / math.sqrt(maxValue);
+    }
   }
 }

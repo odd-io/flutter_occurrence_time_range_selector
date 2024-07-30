@@ -13,7 +13,7 @@ class TimelineStyle extends Equatable {
     required this.axisColor,
     required this.axisLabelStyle,
     required this.backgroundColor,
-    this.useLogarithmicScale = false,
+    this.scaleType = ScaleType.linear,
   });
 
   /// The color of the timeline's axis line.
@@ -29,20 +29,18 @@ class TimelineStyle extends Equatable {
   /// The background color of the entire timeline widget.
   final Color backgroundColor;
 
-  /// Determines whether to use a logarithmic scale for event bar heights.
+  /// The type of scaling to use for the timeline axis.
   ///
-  /// When set to true, the heights of event bars are calculated using a logarithmic scale,
-  /// which can be useful for visualizing data with a wide range of values.
-  /// When false, a linear scale is used.
-  ///
-  /// Defaults to false.
-  final bool useLogarithmicScale;
+  /// The default value is [ScaleType.linear].
+  final ScaleType scaleType;
 
   @override
   List<Object?> get props => [
         axisColor,
         axisLabelStyle,
         backgroundColor,
-        useLogarithmicScale,
+        scaleType,
       ];
 }
+
+enum ScaleType { linear, logarithmic, squareRoot }
