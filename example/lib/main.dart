@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_occurrence_time_range_selector/flutter_occurrence_time_range_selector.dart';
 
 void main() {
@@ -38,10 +39,14 @@ class _MyHomePageState extends State<MyHomePage> {
   late DateTime _endDate;
   late List<TimeEvent> _events;
   late DateTime _startDate;
+  ScaleType _scaleType = ScaleType.linear;
+  final TextEditingController _eventCountController = TextEditingController();
+  bool _addEvents = false;
 
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _eventCountController.dispose();
     super.dispose();
   }
 
@@ -51,8 +56,8 @@ class _MyHomePageState extends State<MyHomePage> {
     _startDate = DateTime(2024, 1, 12);
     _endDate = DateTime(2024, 2, 15);
     _events = generateRandomEvents(
-      DateTime(2024, 1, 1),
-      DateTime(2024, 6, 28),
+      _startDate,
+      _endDate,
       ['Class A', 'Class B', 'Class C', 'Class D', 'Class E'],
       10000,
     );
@@ -66,21 +71,11 @@ class _MyHomePageState extends State<MyHomePage> {
     print('Generating $count random events between $start and $end');
     final t1 = DateTime.now().millisecondsSinceEpoch;
     for (int i = 0; i < count; i++) {
-      DateTime randomDate = DateTime(
-        start.year,
-        start.month + random.nextInt(end.month - start.month + 1),
-        random.nextInt(31) + 1,
-        random.nextInt(24),
-        random.nextInt(60),
-        random.nextInt(60),
-        random.nextInt(1000),
-      );
-      if (randomDate.isAfter(start) && randomDate.isBefore(end)) {
-        String randomTag = tags[random.nextInt(tags.length)];
-        events.add(TimeEvent(tag: randomTag, dateTime: randomDate));
-      } else {
-        i--;
-      }
+      DateTime randomDate = start.add(Duration(
+        seconds: random.nextInt(end.difference(start).inSeconds),
+      ));
+      String randomTag = tags[random.nextInt(tags.length)];
+      events.add(TimeEvent(tag: randomTag, dateTime: randomDate));
     }
     final t2 = DateTime.now().millisecondsSinceEpoch;
     print('Generated $count random events in ${t2 - t1} ms');
@@ -115,6 +110,31 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
+  void _updateScaleType(ScaleType newScaleType) {
+    setState(() {
+      _scaleType = newScaleType;
+    });
+  }
+
+  void _generateCustomEvents() {
+    int count = int.tryParse(_eventCountController.text) ?? 0;
+    if (count > 0) {
+      setState(() {
+        List<TimeEvent> newEvents = generateRandomEvents(
+          _startDate,
+          _endDate,
+          ['Class A', 'Class B', 'Class C', 'Class D', 'Class E'],
+          count,
+        );
+        if (_addEvents) {
+          _events.addAll(newEvents);
+        } else {
+          _events = newEvents;
+        }
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -124,18 +144,89 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: Column(
         children: [
-          Expanded(
-            child: Center(
-              child: ElevatedButton(
-                onPressed: _showDateRangePicker,
-                child: Text(
-                    'Select Date Range: ${_startDate.toString().substring(0, 10)} to ${_endDate.toString().substring(0, 10)}'),
-              ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _showDateRangePicker,
+                    child: Text(
+                        'Date Range: ${_startDate.toString().substring(0, 10)} to ${_endDate.toString().substring(0, 10)}'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SegmentedButton<ScaleType>(
+                    segments: const [
+                      ButtonSegment<ScaleType>(
+                        value: ScaleType.linear,
+                        label: Text('Linear'),
+                      ),
+                      ButtonSegment<ScaleType>(
+                        value: ScaleType.squareRoot,
+                        label: Text('Square Root'),
+                      ),
+                      ButtonSegment<ScaleType>(
+                        value: ScaleType.logarithmic,
+                        label: Text('Logarithmic'),
+                      ),
+                    ],
+                    selected: {_scaleType},
+                    onSelectionChanged: (Set<ScaleType> newSelection) {
+                      _updateScaleType(newSelection.first);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _eventCountController,
+                    decoration: const InputDecoration(
+                      labelText: 'Number of Events',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment<bool>(
+                      value: false,
+                      label: Text('Replace'),
+                    ),
+                    ButtonSegment<bool>(
+                      value: true,
+                      label: Text('Add'),
+                    ),
+                  ],
+                  selected: {_addEvents},
+                  onSelectionChanged: (Set<bool> newSelection) {
+                    setState(() {
+                      _addEvents = newSelection.first;
+                    });
+                  },
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _generateCustomEvents,
+                  child: const Text('Generate Events'),
+                ),
+              ],
             ),
           ),
           Expanded(
             child: TimeRangeSelector(
-              key: ValueKey('$_startDate-$_endDate'),
+              key: ValueKey(
+                  '$_startDate-$_endDate-$_scaleType-${_events.length}'),
               startDate: _startDate,
               endDate: _endDate,
               events: _events,
@@ -150,19 +241,18 @@ class _MyHomePageState extends State<MyHomePage> {
                 print('New range: $newStart to $newEnd');
                 _debouncedUpdateDateRange(newStart, newEnd);
               },
-              style: const TimelineStyle(
+              style: TimelineStyle(
                 axisColor: Colors.black,
-                axisLabelStyle: TextStyle(fontSize: 18, color: Colors.black),
+                axisLabelStyle:
+                    const TextStyle(fontSize: 18, color: Colors.black),
                 backgroundColor: Colors.white,
-                useLogarithmicScale: false,
+                scaleType: _scaleType,
               ),
             ),
           ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: SingleChildScrollView(
-              child: SelectableText(_events.toString()),
-            ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text('Total Events: ${_events.length}'),
           ),
         ],
       ),
