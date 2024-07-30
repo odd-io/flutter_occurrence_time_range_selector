@@ -260,10 +260,22 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
                 HighlightGroup(
                   dates: [DateTime(2024, 5, 10)],
-                  builder: (context, size) => Container(
-                    width: 10,
-                    height: 10,
-                    color: Colors.blue.withOpacity(0.3),
+                  builder: (context, size) => Tooltip(
+                    message: 'Special Date',
+                    child: InkWell(
+                      onTap: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Special Date Tapped!'),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        color: Colors.blue.withOpacity(0.3),
+                      ),
+                    ),
                   ),
                 ),
               ],
