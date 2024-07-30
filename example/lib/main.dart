@@ -153,8 +153,8 @@ class _MyHomePageState extends State<MyHomePage> {
               style: const TimelineStyle(
                 axisColor: Colors.black,
                 axisLabelStyle: TextStyle(fontSize: 18, color: Colors.black),
-                barSpacing: 2,
                 backgroundColor: Colors.white,
+                useLogarithmicScale: false,
               ),
             ),
           ),
