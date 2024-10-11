@@ -139,154 +139,231 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // Determine screen width to adjust layout for mobile
+          bool isNarrow = constraints.maxWidth < 600;
+          return SingleChildScrollView(
+            child: Column(
               children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _showDateRangePicker,
-                    child: Text(
-                        'Date Range: ${_startDate.toString().substring(0, 10)} to ${_endDate.toString().substring(0, 10)}'),
-                  ),
+                // Top Controls (Date Range and Scale Type)
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: isNarrow
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: _buildTopControls(isNarrow),
+                        )
+                      : Row(
+                          children: _buildTopControls(isNarrow),
+                        ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: SegmentedButton<ScaleType>(
-                    segments: const [
-                      ButtonSegment<ScaleType>(
-                        value: ScaleType.linear,
-                        label: Text('Linear'),
+                // Event Controls (Event Count and Generate Button)
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: isNarrow
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: _buildEventControls(isNarrow),
+                        )
+                      : Row(
+                          children: _buildEventControls(isNarrow),
+                        ),
+                ),
+                // Time Range Selector Widget
+                SizedBox(
+                  height: isNarrow ? 300 : 400, // Adjust height for mobile
+                  child: TimeRangeSelector(
+                    key: ValueKey(
+                        '$_startDate-$_endDate-$_scaleType-${_events.length}'),
+                    startDate: _startDate,
+                    endDate: _endDate,
+                    events: _events,
+                    tagStyles: const {
+                      'Class A': TagStyle(color: Colors.blue),
+                      'Class B': TagStyle(color: Colors.red),
+                      'Class C': TagStyle(color: Colors.green),
+                      'Class D': TagStyle(color: Colors.orange),
+                      'Class E': TagStyle(color: Colors.purple),
+                    },
+                    onRangeChanged: (DateTime newStart, DateTime newEnd) {
+                      print('New range: $newStart to $newEnd');
+                      _debouncedUpdateDateRange(newStart, newEnd);
+                    },
+                    style: TimelineStyle(
+                      axisColor: Colors.black,
+                      axisLabelStyle:
+                          const TextStyle(fontSize: 18, color: Colors.black),
+                      backgroundColor: Colors.white,
+                      scaleType: _scaleType,
+                    ),
+                    highlightGroups: [
+                      HighlightGroup(
+                        dates: [DateTime(2024, 3, 1), DateTime(2024, 4, 15)],
+                        builder: (context, size) => const DotHighlight(),
                       ),
-                      ButtonSegment<ScaleType>(
-                        value: ScaleType.squareRoot,
-                        label: Text('Square Root'),
+                      HighlightGroup(
+                        dates: [DateTime(2024, 7, 4), DateTime(2024, 1, 20)],
+                        builder: (context, size) =>
+                            const StarHighlight(color: Colors.amber),
                       ),
-                      ButtonSegment<ScaleType>(
-                        value: ScaleType.logarithmic,
-                        label: Text('Logarithmic'),
+                      HighlightGroup(
+                        dates: [DateTime(2024, 5, 10)],
+                        builder: (context, size) => Tooltip(
+                          message: 'Special Date',
+                          child: InkWell(
+                            onTap: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Special Date Tapped!'),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              color: Colors.blue.withOpacity(0.3),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
-                    selected: {_scaleType},
-                    onSelectionChanged: (Set<ScaleType> newSelection) {
-                      _updateScaleType(newSelection.first);
-                    },
                   ),
+                ),
+                // Total Events Text
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text('Total Events: ${_events.length}'),
                 ),
               ],
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _eventCountController,
-                    decoration: const InputDecoration(
-                      labelText: 'Number of Events',
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment<bool>(
-                      value: false,
-                      label: Text('Replace'),
-                    ),
-                    ButtonSegment<bool>(
-                      value: true,
-                      label: Text('Add'),
-                    ),
-                  ],
-                  selected: {_addEvents},
-                  onSelectionChanged: (Set<bool> newSelection) {
-                    setState(() {
-                      _addEvents = newSelection.first;
-                    });
-                  },
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _generateCustomEvents,
-                  child: const Text('Generate Events'),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: TimeRangeSelector(
-              key: ValueKey(
-                  '$_startDate-$_endDate-$_scaleType-${_events.length}'),
-              startDate: _startDate,
-              endDate: _endDate,
-              events: _events,
-              tagStyles: const {
-                'Class A': TagStyle(color: Colors.blue),
-                'Class B': TagStyle(color: Colors.red),
-                'Class C': TagStyle(color: Colors.green),
-                'Class D': TagStyle(color: Colors.orange),
-                'Class E': TagStyle(color: Colors.purple),
-              },
-              onRangeChanged: (DateTime newStart, DateTime newEnd) {
-                print('New range: $newStart to $newEnd');
-                _debouncedUpdateDateRange(newStart, newEnd);
-              },
-              style: TimelineStyle(
-                axisColor: Colors.black,
-                axisLabelStyle:
-                    const TextStyle(fontSize: 18, color: Colors.black),
-                backgroundColor: Colors.white,
-                scaleType: _scaleType,
-              ),
-              highlightGroups: [
-                HighlightGroup(
-                  dates: [DateTime(2024, 3, 1), DateTime(2024, 4, 15)],
-                  builder: (context, size) => const DotHighlight(),
-                ),
-                HighlightGroup(
-                  dates: [DateTime(2024, 7, 4), DateTime(2024, 1, 20)],
-                  builder: (context, size) =>
-                      const StarHighlight(color: Colors.amber),
-                ),
-                HighlightGroup(
-                  dates: [DateTime(2024, 5, 10)],
-                  builder: (context, size) => Tooltip(
-                    message: 'Special Date',
-                    child: InkWell(
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Special Date Tapped!'),
-                          ),
-                        );
-                      },
-                      child: Container(
-                        width: 10,
-                        height: 10,
-                        color: Colors.blue.withOpacity(0.3),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text('Total Events: ${_events.length}'),
-          ),
-        ],
+          );
+        },
       ),
     );
+  }
+
+  // Helper method for top controls
+  List<Widget> _buildTopControls(bool isNarrow) {
+    return [
+      if (isNarrow)
+        ElevatedButton(
+          onPressed: _showDateRangePicker,
+          child: Text(
+            'Date Range: ${_startDate.toString().substring(0, 10)}'
+            ' to ${_endDate.toString().substring(0, 10)}',
+          ),
+        )
+      else
+        Expanded(
+          child: ElevatedButton(
+            onPressed: _showDateRangePicker,
+            child: Text(
+              'Date Range: ${_startDate.toString().substring(0, 10)}'
+              ' to ${_endDate.toString().substring(0, 10)}',
+            ),
+          ),
+        ),
+      const SizedBox(width: 8),
+      if (isNarrow)
+        SegmentedButton<ScaleType>(
+          segments: const [
+            ButtonSegment<ScaleType>(
+              value: ScaleType.linear,
+              label: Text('Linear'),
+            ),
+            ButtonSegment<ScaleType>(
+              value: ScaleType.squareRoot,
+              label: Text('Square Root'),
+            ),
+            ButtonSegment<ScaleType>(
+              value: ScaleType.logarithmic,
+              label: Text('Logarithmic'),
+            ),
+          ],
+          selected: {_scaleType},
+          onSelectionChanged: (Set<ScaleType> newSelection) {
+            _updateScaleType(newSelection.first);
+          },
+        )
+      else
+        Expanded(
+          child: SegmentedButton<ScaleType>(
+            segments: const [
+              ButtonSegment<ScaleType>(
+                value: ScaleType.linear,
+                label: Text('Linear'),
+              ),
+              ButtonSegment<ScaleType>(
+                value: ScaleType.squareRoot,
+                label: Text('Square Root'),
+              ),
+              ButtonSegment<ScaleType>(
+                value: ScaleType.logarithmic,
+                label: Text('Logarithmic'),
+              ),
+            ],
+            selected: {_scaleType},
+            onSelectionChanged: (Set<ScaleType> newSelection) {
+              _updateScaleType(newSelection.first);
+            },
+          ),
+        ),
+    ];
+  }
+
+  // Helper method for event controls
+  List<Widget> _buildEventControls(bool isNarrow) {
+    return [
+      if (isNarrow)
+        TextField(
+          controller: _eventCountController,
+          decoration: const InputDecoration(
+            labelText: 'Number of Events',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        )
+      else
+        Expanded(
+          child: TextField(
+            controller: _eventCountController,
+            decoration: const InputDecoration(
+              labelText: 'Number of Events',
+              border: OutlineInputBorder(),
+            ),
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          ),
+        ),
+      const SizedBox(width: 8),
+      SegmentedButton<bool>(
+        segments: const [
+          ButtonSegment<bool>(
+            value: false,
+            label: Text('Replace'),
+          ),
+          ButtonSegment<bool>(
+            value: true,
+            label: Text('Add'),
+          ),
+        ],
+        selected: {_addEvents},
+        onSelectionChanged: (Set<bool> newSelection) {
+          setState(() {
+            _addEvents = newSelection.first;
+          });
+        },
+      ),
+      const SizedBox(width: 8),
+      ElevatedButton(
+        onPressed: _generateCustomEvents,
+        child: const Text('Generate Events'),
+      ),
+    ];
   }
 }
