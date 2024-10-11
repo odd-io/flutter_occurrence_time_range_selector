@@ -46,6 +46,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   final List<LabelInfo> _visibleLabels = [];
   late double _widgetWidth;
   late double _zoomFactor; // milliseconds per pixel
+  double? _initialScaleZoomFactor;
 
   @override
   void initState() {
@@ -211,6 +212,68 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     }).toList();
   }
 
+  void _handleScaleStart(ScaleStartDetails details) {
+    _initialScaleZoomFactor = _zoomFactor;
+  }
+
+  void _handleScaleUpdate(ScaleUpdateDetails details) {
+    // Handle zooming with pinch gesture
+    if (details.scale != 1.0 && _initialScaleZoomFactor != null) {
+      double newZoomFactor = (_initialScaleZoomFactor! / details.scale)
+          .clamp(widget.minZoomFactor, widget.maxZoomFactor);
+
+      if (newZoomFactor == _zoomFactor) {
+        return;
+      }
+
+      Duration currentRange = _currentEndDate.difference(_currentStartDate);
+      DateTime middlePoint = _currentStartDate.add(currentRange ~/ 2);
+      double zoomChange = newZoomFactor / _zoomFactor;
+
+      Duration newHalfRange = Duration(
+        milliseconds: (currentRange.inMilliseconds * zoomChange / 2).round(),
+      );
+
+      setState(() {
+        _zoomFactor = newZoomFactor;
+
+        _currentStartDate = middlePoint.subtract(newHalfRange);
+        _currentEndDate = middlePoint.add(newHalfRange);
+
+        _updateGroupedEvents();
+        _generateLabels();
+      });
+      widget.onRangeChanged?.call(_currentStartDate, _currentEndDate);
+    }
+
+    // Handle panning during pinch gesture (touch devices)
+    if (details.scale == 1.0 && details.focalPointDelta.dx != 0) {
+      _processPanUpdate(details.focalPointDelta);
+    }
+  }
+
+  void _handlePanStart(DragStartDetails details) {
+    // Initialize state for mouse panning if needed
+  }
+
+  void _handleMousePanUpdate(DragUpdateDetails details) {
+    _processPanUpdate(details.delta);
+  }
+
+  void _processPanUpdate(Offset delta) {
+    Duration shiftDuration = Duration(
+      milliseconds: (_zoomFactor * -delta.dx).round(),
+    );
+
+    setState(() {
+      _currentStartDate = _currentStartDate.add(shiftDuration);
+      _currentEndDate = _currentEndDate.add(shiftDuration);
+      _generateLabels();
+    });
+
+    widget.onRangeChanged?.call(_currentStartDate, _currentEndDate);
+  }
+
   void _handleZoom(PointerSignalEvent event) {
     if (event is PointerScrollEvent) {
       double zoomChange = event.scrollDelta.dy > 0 ? 1.1 : 0.9;
@@ -239,17 +302,6 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     }
   }
 
-  void _handlePan(DragUpdateDetails details) {
-    Duration shiftDuration =
-        Duration(milliseconds: (_zoomFactor * -details.delta.dx).round());
-    setState(() {
-      _currentStartDate = _currentStartDate.add(shiftDuration);
-      _currentEndDate = _currentEndDate.add(shiftDuration);
-      _generateLabels();
-    });
-    widget.onRangeChanged?.call(_currentStartDate, _currentEndDate);
-  }
-
   Map<DateTime, List<GroupedEvent>> _getRelevantGroups() {
     Map<DateTime, List<GroupedEvent>> selectedEvents = {};
     for (var key in _groupedEvents.keys) {
@@ -268,10 +320,29 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
         _generateLabels();
         return Stack(
           children: [
-            Listener(
-              onPointerSignal: _handleZoom,
-              child: GestureDetector(
-                onPanUpdate: _handlePan,
+            RawGestureDetector(
+              gestures: {
+                ScaleGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+                    ScaleGestureRecognizer>(
+                  () => ScaleGestureRecognizer(),
+                  (ScaleGestureRecognizer instance) {
+                    instance.onStart = _handleScaleStart;
+                    instance.onUpdate = _handleScaleUpdate;
+                    instance.supportedDevices = {PointerDeviceKind.touch};
+                  },
+                ),
+                PanGestureRecognizer:
+                    GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
+                  () => PanGestureRecognizer(),
+                  (PanGestureRecognizer instance) {
+                    instance.onStart = _handlePanStart;
+                    instance.onUpdate = _handleMousePanUpdate;
+                    instance.supportedDevices = {PointerDeviceKind.mouse};
+                  },
+                ),
+              },
+              child: Listener(
+                onPointerSignal: _handleZoom,
                 child: Container(
                   color: widget.style.backgroundColor,
                   child: CustomPaint(
