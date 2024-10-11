@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.3
+
+- Enable zooming on touch/mobile devices
+
 ## 0.0.2
 
 - Add style option `scaleType` with `linear`, `sqaureRoot` and `log` options for scaling the size of the bars
