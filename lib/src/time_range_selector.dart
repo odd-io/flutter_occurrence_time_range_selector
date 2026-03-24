@@ -170,26 +170,25 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
 
   Map<DateTime, List<GroupedEvent>> _groupEventsByInterval(
       List<TimeEvent> events, Duration interval) {
-    final groupedEvents = <DateTime, List<GroupedEvent>>{};
+    // Use nested Map for O(1) tag lookup
+    final buckets = <DateTime, Map<String, GroupedEvent>>{};
 
     for (var event in events) {
       final groupKey = DateTime.fromMillisecondsSinceEpoch(
           (event.dateTime.millisecondsSinceEpoch ~/ interval.inMilliseconds) *
               interval.inMilliseconds);
 
-      groupedEvents.putIfAbsent(groupKey, () => []);
-
-      final existingEvent = groupedEvents[groupKey]!
-          .firstWhere((e) => e.tag == event.tag, orElse: () {
-        final newEvent = GroupedEvent(tag: event.tag, value: 0);
-        groupedEvents[groupKey]!.add(newEvent);
-        return newEvent;
-      });
-
-      existingEvent.value++;
+      final tagMap = buckets.putIfAbsent(groupKey, () => {});
+      final existing = tagMap[event.tag];
+      if (existing != null) {
+        existing.value++;
+      } else {
+        tagMap[event.tag] = GroupedEvent(tag: event.tag, value: 1);
+      }
     }
 
-    return groupedEvents;
+    // Convert to List<GroupedEvent> per bucket
+    return buckets.map((key, tagMap) => MapEntry(key, tagMap.values.toList()));
   }
 
   List<Widget> _buildHighlights(BoxConstraints constraints) {
