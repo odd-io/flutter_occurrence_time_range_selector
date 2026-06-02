@@ -15,6 +15,7 @@ class TimelinePainter extends CustomPainter {
     required this.zoomFactor,
     required this.style,
     required this.visibleLabels,
+    this.majorLabels = const [],
     required this.getLabelInterval,
   });
 
@@ -25,6 +26,9 @@ class TimelinePainter extends CustomPainter {
   final TimelineStyle style;
   final Map<String, TagStyle> tagStyles;
   final List<LabelInfo> visibleLabels;
+  // Coarser boundaries (month/year/day) rendered as heavier separators +
+  // bold labels for the two-tier axis.
+  final List<LabelInfo> majorLabels;
   final double zoomFactor;
 
   @override
@@ -45,6 +49,12 @@ class TimelinePainter extends CustomPainter {
     final totalDuration = endDate.difference(startDate);
     final pixelsPerUnit = size.width / totalDuration.inMilliseconds;
 
+    // Day/night shading (behind everything) — only on the sub-day zoom.
+    _drawDayNightBands(canvas, size, pixelsPerUnit, labelHeight);
+
+    // Major separators (behind bars) — the coarser axis tier.
+    _drawMajorSeparators(canvas, size, pixelsPerUnit, labelHeight);
+
     // Draw time labels
     _drawTimeLabels(canvas, size, pixelsPerUnit, labelHeight);
 
@@ -53,13 +63,74 @@ class TimelinePainter extends CustomPainter {
         canvas, size, pixelsPerUnit, labelHeight, highlightSpace);
   }
 
+  /// Fixed-band day/night shading (20:00–06:00 local). Drawn only when a
+  /// shade color is set AND the bar interval is sub-day (otherwise a bar
+  /// already spans many nights and the band is meaningless).
+  void _drawDayNightBands(
+      Canvas canvas, Size size, double pixelsPerUnit, double labelHeight) {
+    final shade = style.dayNightShadeColor;
+    if (shade == null) return;
+    if (getLabelInterval() >= const Duration(days: 1)) return;
+
+    final paint = Paint()
+      ..color = shade
+      ..style = PaintingStyle.fill;
+    final top = 0.0;
+    final bottom = size.height - labelHeight;
+
+    // Walk each calendar day in range; shade [prev 20:00 .. 06:00] etc.
+    // Start a day early so a night straddling the left edge still paints.
+    var day = DateTime(startDate.year, startDate.month, startDate.day)
+        .subtract(const Duration(days: 1));
+    final end = endDate;
+    while (day.isBefore(end)) {
+      final nightStart = DateTime(day.year, day.month, day.day, 20);
+      final nightEnd = DateTime(day.year, day.month, day.day)
+          .add(const Duration(days: 1, hours: 6));
+      final x1 = nightStart.difference(startDate).inMilliseconds * pixelsPerUnit;
+      final x2 = nightEnd.difference(startDate).inMilliseconds * pixelsPerUnit;
+      final l = x1.clamp(0.0, size.width);
+      final r = x2.clamp(0.0, size.width);
+      if (r > l) {
+        canvas.drawRect(Rect.fromLTRB(l, top, r, bottom), paint);
+      }
+      day = day.add(const Duration(days: 1));
+    }
+  }
+
+  /// Heavier vertical separators + bold labels at the coarse (major) tier.
+  void _drawMajorSeparators(
+      Canvas canvas, Size size, double pixelsPerUnit, double labelHeight) {
+    if (majorLabels.isEmpty) return;
+    final linePaint = Paint()
+      ..color = style.axisColor.withValues(alpha: 0.35)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    final boldStyle = style.axisLabelStyle.copyWith(fontWeight: FontWeight.bold);
+    final tp = TextPainter(
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    );
+    for (final label in majorLabels) {
+      final x =
+          label.dateTime.difference(startDate).inMilliseconds * pixelsPerUnit;
+      if (x < 0 || x > size.width) continue;
+      canvas.drawLine(
+          Offset(x, 0), Offset(x, size.height - labelHeight), linePaint);
+      tp.text = TextSpan(text: label.text, style: boldStyle);
+      tp.layout();
+      tp.paint(canvas, Offset(x + 3, size.height - labelHeight));
+    }
+  }
+
   @override
   bool shouldRepaint(covariant TimelinePainter oldDelegate) {
     return startDate != oldDelegate.startDate ||
         endDate != oldDelegate.endDate ||
         zoomFactor != oldDelegate.zoomFactor ||
         visibleLabels != oldDelegate.visibleLabels ||
-        style.scaleType != oldDelegate.style.scaleType;
+        majorLabels != oldDelegate.majorLabels ||
+        style != oldDelegate.style;
   }
 
   void _drawTimeLabels(
@@ -94,11 +165,18 @@ class TimelinePainter extends CustomPainter {
         : 0;
     final availableHeight = size.height - labelHeight - highlightSpace;
 
+    // Each bucket occupies a slot one interval wide. Draw the bar at ~70%
+    // of the slot (capped at maxBarPx) and center it, so wide slots render
+    // as a distinct bar with whitespace instead of a fat block.
     final labelInterval = getLabelInterval();
-    final barWidth = labelInterval.inMilliseconds * pixelsPerUnit;
+    final slotWidth = labelInterval.inMilliseconds * pixelsPerUnit;
+    const maxBarPx = 22.0;
+    final barWidth = math.max(1.0, math.min(slotWidth * 0.7, maxBarPx));
+    final barInset = (slotWidth - barWidth) / 2;
 
     groupedEvents.forEach((dateTime, events) {
-      final x = dateTime.difference(startDate).inMilliseconds * pixelsPerUnit;
+      final x = dateTime.difference(startDate).inMilliseconds * pixelsPerUnit +
+          barInset;
       double yOffset = size.height - labelHeight;
 
       // Sort events alphabetically by tag

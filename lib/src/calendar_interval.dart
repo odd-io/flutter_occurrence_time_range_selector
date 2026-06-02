@@ -112,6 +112,25 @@ const List<CalendarInterval> kCalendarLadder = [
   CalendarInterval(CalendarUnit.year, 1),
 ];
 
+/// The coarser "major" interval to pair with a given minor [unit] for a
+/// two-tier axis (small ticks at the fine unit + a heavier separator/bold
+/// label at the coarse one): hour→day, day/week→month, month→year. Returns
+/// null when the unit is already the coarsest (year).
+CalendarInterval? majorIntervalFor(CalendarUnit unit) {
+  switch (unit) {
+    case CalendarUnit.minute:
+    case CalendarUnit.hour:
+      return const CalendarInterval(CalendarUnit.day, 1);
+    case CalendarUnit.day:
+    case CalendarUnit.week:
+      return const CalendarInterval(CalendarUnit.month, 1);
+    case CalendarUnit.month:
+      return const CalendarInterval(CalendarUnit.year, 1);
+    case CalendarUnit.year:
+      return null;
+  }
+}
+
 /// Pick the finest calendar interval (>= [min], if given) that yields no more
 /// than [targetCount] buckets across [rangeMs]. This is the "density" rule:
 /// target ≈ 1 tick per ~N pixels → targetCount = width / N.

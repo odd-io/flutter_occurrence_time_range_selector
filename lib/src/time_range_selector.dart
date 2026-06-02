@@ -17,6 +17,7 @@ class TimeRangeSelector extends StatefulWidget {
     required this.endDate,
     this.events = const [],
     this.preAggregated,
+    this.baseInterval,
     required this.tagStyles,
     this.onRangeChanged,
     required this.style,
@@ -40,6 +41,11 @@ class TimeRangeSelector extends StatefulWidget {
   /// interval. This is the production-shaped path (no per-event objects).
   final Map<DateTime, Map<String, int>>? preAggregated;
 
+  /// The finest interval the data supports (the server bucket size). The
+  /// widget never aggregates finer than this. When null it falls back to
+  /// daily for pre-aggregated input, or unbounded for raw events.
+  final CalendarInterval? baseInterval;
+
   final List<HighlightGroup> highlightGroups;
   final double maxZoomFactor;
   final double minZoomFactor;
@@ -56,6 +62,9 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   late DateTime _currentStartDate;
   Map<DateTime, List<GroupedEvent>> _groupedEvents = {};
   final List<LabelInfo> _visibleLabels = [];
+  // Coarser "major" boundaries (month/year/day) for the two-tier axis —
+  // heavier separators + bold labels drawn by the painter.
+  final List<LabelInfo> _majorLabels = [];
   double _widgetWidth = 0;
   late double _zoomFactor; // milliseconds per pixel
   double? _initialScaleZoomFactor;
@@ -79,7 +88,8 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   void didUpdateWidget(TimeRangeSelector oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(widget.events, oldWidget.events) ||
-        !identical(widget.preAggregated, oldWidget.preAggregated)) {
+        !identical(widget.preAggregated, oldWidget.preAggregated) ||
+        widget.baseInterval != oldWidget.baseInterval) {
       _barInterval = null; // force re-group on next build
     }
   }
@@ -89,10 +99,14 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     return range.inMilliseconds / 1000;
   }
 
-  /// Finest calendar interval we may aggregate to. With pre-aggregated input
-  /// the base grid is daily, so we can't render finer than a day.
+  /// Finest calendar interval we may aggregate to. The explicit
+  /// [baseInterval] (server bucket) wins; otherwise pre-aggregated input
+  /// defaults to daily and raw events are unbounded.
   CalendarInterval? get _minInterval =>
-      widget.preAggregated != null ? const CalendarInterval(CalendarUnit.day, 1) : null;
+      widget.baseInterval ??
+      (widget.preAggregated != null
+          ? const CalendarInterval(CalendarUnit.day, 1)
+          : null);
 
   /// Recompute bars + labels for the current range/width. Called from build()
   /// (and therefore after every pan/zoom setState). Re-groups only when the
@@ -141,26 +155,51 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
 
   void _generateLabels() {
     _visibleLabels.clear();
+    _majorLabels.clear();
     final rangeMs = _currentEndDate.difference(_currentStartDate).inMilliseconds;
     if (rangeMs <= 0 || _widgetWidth <= 0) return;
+    final pxPerMs = _widgetWidth / rangeMs;
+    double xOf(DateTime d) =>
+        d.difference(_currentStartDate).inMilliseconds * pxPerMs;
 
-    // Labels: ~1 per 110px (Extended-Wilkinson density rule), never finer
-    // than the bars. Calendar-aligned so they land on 00:00 / Mon / 1st.
+    // Minor labels: ~1 per 110px (Extended-Wilkinson density rule), never
+    // finer than the bars. Calendar-aligned so they land on 00:00/Mon/1st.
     final labelIv = pickCalendarInterval(
       rangeMs: rangeMs,
       targetCount: _widgetWidth / 110,
       min: _barInterval,
     );
-    final pxPerMs = _widgetWidth / rangeMs;
 
+    // Major boundaries: the next coarser calendar unit (day→month→year).
+    // Drawn as heavier separators + bold labels so periods are visually
+    // grouped (e.g. months distinguished on a multi-week view).
+    final majorIv = majorIntervalFor(labelIv.unit);
+    final majorXs = <double>[];
+    if (majorIv != null) {
+      DateTime m = majorIv.align(_currentStartDate);
+      if (m.isBefore(_currentStartDate)) m = majorIv.next(m);
+      double lastX = -1e9;
+      while (m.isBefore(_currentEndDate)) {
+        final x = xOf(m);
+        if (x - lastX >= 60.0) {
+          _majorLabels.add(LabelInfo(m, majorIv.label(m)));
+          majorXs.add(x);
+          lastX = x;
+        }
+        m = majorIv.next(m);
+      }
+    }
+
+    // Minor labels, thinned against each other AND against the majors so a
+    // bold month label never collides with a minor day label.
     DateTime cur = labelIv.align(_currentStartDate);
     if (cur.isBefore(_currentStartDate)) cur = labelIv.next(cur);
-
     double lastX = -1e9;
-    const minGapPx = 55.0; // hard overlap guard
+    const minGapPx = 55.0;
     while (cur.isBefore(_currentEndDate)) {
-      final x = cur.difference(_currentStartDate).inMilliseconds * pxPerMs;
-      if (x - lastX >= minGapPx) {
+      final x = xOf(cur);
+      final nearMajor = majorXs.any((mx) => (mx - x).abs() < minGapPx);
+      if (!nearMajor && x - lastX >= minGapPx) {
         _visibleLabels.add(LabelInfo(cur, labelIv.label(cur)));
         lastX = x;
       }
@@ -327,6 +366,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
                       zoomFactor: _zoomFactor,
                       style: widget.style,
                       visibleLabels: _visibleLabels,
+                      majorLabels: _majorLabels,
                       getLabelInterval: () =>
                           _barInterval?.approxDuration ?? const Duration(days: 1),
                     ),
