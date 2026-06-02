@@ -9,7 +9,7 @@ import 'package:intl/intl.dart' as intl;
 /// auto-interval): pick the interval from a calendar-aligned candidate
 /// ladder by target density (≈ 1 per N pixels), then align()/next() walk
 /// calendar boundaries and label() formats by granularity.
-enum CalendarUnit { minute, hour, day, week, month, year }
+enum CalendarUnit { second, minute, hour, day, week, month, year }
 
 class CalendarInterval {
   const CalendarInterval(this.unit, this.count);
@@ -21,6 +21,8 @@ class CalendarInterval {
   /// Calendar walking uses align()/next(), which are exact.
   int get approxMs {
     switch (unit) {
+      case CalendarUnit.second:
+        return count * 1000;
       case CalendarUnit.minute:
         return count * 60 * 1000;
       case CalendarUnit.hour:
@@ -41,13 +43,22 @@ class CalendarInterval {
   /// Floor [d] to the start of its calendar bucket.
   DateTime align(DateTime d) {
     switch (unit) {
+      case CalendarUnit.second:
+        return DateTime(d.year, d.month, d.day, d.hour, d.minute,
+            (d.second ~/ count) * count);
       case CalendarUnit.minute:
         return DateTime(d.year, d.month, d.day, d.hour,
             (d.minute ~/ count) * count);
       case CalendarUnit.hour:
         return DateTime(d.year, d.month, d.day, (d.hour ~/ count) * count);
       case CalendarUnit.day:
-        return DateTime(d.year, d.month, d.day);
+        if (count <= 1) return DateTime(d.year, d.month, d.day);
+        // Multi-day: anchor to the month start (D3-style), so 2d/4d ticks
+        // restart on the 1st each month. Drift on the last interval of a
+        // month is accepted.
+        final base = DateTime(d.year, d.month, 1);
+        final daysSince = d.difference(base).inDays;
+        return base.add(Duration(days: (daysSince ~/ count) * count));
       case CalendarUnit.week:
         // Monday-aligned, midnight.
         final monday = d.subtract(Duration(days: d.weekday - 1));
@@ -63,12 +74,18 @@ class CalendarInterval {
   /// variable month lengths stay correct).
   DateTime next(DateTime d) {
     switch (unit) {
+      case CalendarUnit.second:
+        return d.add(Duration(seconds: count));
       case CalendarUnit.minute:
         return d.add(Duration(minutes: count));
       case CalendarUnit.hour:
         return d.add(Duration(hours: count));
       case CalendarUnit.day:
-        return DateTime(d.year, d.month, d.day + count);
+        if (count <= 1) return DateTime(d.year, d.month, d.day + count);
+        final n = DateTime(d.year, d.month, d.day + count);
+        // Re-anchor at month boundaries so multi-day ticks restart on the 1st.
+        if (n.month != d.month) return DateTime(n.year, n.month, 1);
+        return n;
       case CalendarUnit.week:
         return DateTime(d.year, d.month, d.day + 7 * count);
       case CalendarUnit.month:
@@ -81,6 +98,8 @@ class CalendarInterval {
   /// Multi-scale label, granularity chosen by unit (D3 d3-time-format style).
   String label(DateTime d) {
     switch (unit) {
+      case CalendarUnit.second:
+        return intl.DateFormat('HH:mm:ss').format(d);
       case CalendarUnit.minute:
       case CalendarUnit.hour:
         return intl.DateFormat('HH:mm').format(d);
@@ -99,6 +118,8 @@ class CalendarInterval {
   /// below. hour→'HH:mm', day/week→day number, month→'MMM', year→'y'.
   String tickLabel(DateTime d) {
     switch (unit) {
+      case CalendarUnit.second:
+        return intl.DateFormat('HH:mm:ss').format(d);
       case CalendarUnit.minute:
       case CalendarUnit.hour:
         return intl.DateFormat('HH:mm').format(d);
@@ -117,6 +138,8 @@ class CalendarInterval {
   /// week→'d MMM', month→'MMMM yyyy', year→'y'.
   String spanLabel(DateTime d) {
     switch (unit) {
+      case CalendarUnit.second:
+        return intl.DateFormat('HH:mm:ss').format(d);
       case CalendarUnit.minute:
       case CalendarUnit.hour:
         return intl.DateFormat('HH:mm').format(d);
@@ -134,6 +157,10 @@ class CalendarInterval {
 
 /// Ascending ladder of calendar-aligned candidate intervals.
 const List<CalendarInterval> kCalendarLadder = [
+  CalendarInterval(CalendarUnit.second, 1),
+  CalendarInterval(CalendarUnit.second, 5),
+  CalendarInterval(CalendarUnit.second, 15),
+  CalendarInterval(CalendarUnit.second, 30),
   CalendarInterval(CalendarUnit.minute, 1),
   CalendarInterval(CalendarUnit.minute, 5),
   CalendarInterval(CalendarUnit.minute, 15),
@@ -143,9 +170,13 @@ const List<CalendarInterval> kCalendarLadder = [
   CalendarInterval(CalendarUnit.hour, 6),
   CalendarInterval(CalendarUnit.hour, 12),
   CalendarInterval(CalendarUnit.day, 1),
+  CalendarInterval(CalendarUnit.day, 2),
+  CalendarInterval(CalendarUnit.day, 4),
   CalendarInterval(CalendarUnit.week, 1),
   CalendarInterval(CalendarUnit.month, 1),
+  CalendarInterval(CalendarUnit.month, 2),
   CalendarInterval(CalendarUnit.month, 3), // quarter
+  CalendarInterval(CalendarUnit.month, 6),
   CalendarInterval(CalendarUnit.year, 1),
 ];
 
@@ -155,6 +186,7 @@ const List<CalendarInterval> kCalendarLadder = [
 /// null when the unit is already the coarsest (year).
 CalendarInterval? majorIntervalFor(CalendarUnit unit) {
   switch (unit) {
+    case CalendarUnit.second:
     case CalendarUnit.minute:
     case CalendarUnit.hour:
       return const CalendarInterval(CalendarUnit.day, 1);

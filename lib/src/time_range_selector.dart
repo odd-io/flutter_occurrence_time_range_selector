@@ -127,7 +127,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     // base grid. Tunable: smaller divisor = more, thinner bars + bigger steps.
     final newBar = pickCalendarInterval(
       rangeMs: rangeMs,
-      targetCount: _widgetWidth / 24,
+      targetCount: _widgetWidth / 9,
       min: _minInterval,
     );
     if (_barInterval == null ||
