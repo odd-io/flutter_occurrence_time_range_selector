@@ -14,7 +14,6 @@ class TimelineStyle extends Equatable {
     required this.axisLabelStyle,
     required this.backgroundColor,
     this.scaleType = ScaleType.linear,
-    this.dayNightShadeColor,
   });
 
   /// The color of the timeline's axis line.
@@ -35,18 +34,12 @@ class TimelineStyle extends Equatable {
   /// The default value is [ScaleType.linear].
   final ScaleType scaleType;
 
-  /// When non-null AND the bar interval is sub-day, the painter shades a
-  /// fixed night window (20:00–06:00 local) behind the bars with this
-  /// color. Null disables day/night shading. Use a low-alpha cool tint.
-  final Color? dayNightShadeColor;
-
   @override
   List<Object?> get props => [
         axisColor,
         axisLabelStyle,
         backgroundColor,
         scaleType,
-        dayNightShadeColor,
       ];
 }
 

@@ -93,6 +93,43 @@ class CalendarInterval {
         return intl.DateFormat('y').format(d);
     }
   }
+
+  /// Short label for the FINE tick row of the two-row axis — just the unit's
+  /// own value, since the coarser context (month/year/date) is in the row
+  /// below. hour→'HH:mm', day/week→day number, month→'MMM', year→'y'.
+  String tickLabel(DateTime d) {
+    switch (unit) {
+      case CalendarUnit.minute:
+      case CalendarUnit.hour:
+        return intl.DateFormat('HH:mm').format(d);
+      case CalendarUnit.day:
+      case CalendarUnit.week:
+        return intl.DateFormat('d').format(d);
+      case CalendarUnit.month:
+        return intl.DateFormat('MMM').format(d);
+      case CalendarUnit.year:
+        return intl.DateFormat('y').format(d);
+    }
+  }
+
+  /// Label for the CONTEXT row when THIS interval is the coarse unit — the
+  /// span's name, left-aligned at its boundary. hour→'HH:mm', day→'EEE d MMM',
+  /// week→'d MMM', month→'MMMM yyyy', year→'y'.
+  String spanLabel(DateTime d) {
+    switch (unit) {
+      case CalendarUnit.minute:
+      case CalendarUnit.hour:
+        return intl.DateFormat('HH:mm').format(d);
+      case CalendarUnit.day:
+        return intl.DateFormat('EEE d MMM').format(d);
+      case CalendarUnit.week:
+        return intl.DateFormat('d MMM').format(d);
+      case CalendarUnit.month:
+        return intl.DateFormat('MMMM yyyy').format(d);
+      case CalendarUnit.year:
+        return intl.DateFormat('y').format(d);
+    }
+  }
 }
 
 /// Ascending ladder of calendar-aligned candidate intervals.

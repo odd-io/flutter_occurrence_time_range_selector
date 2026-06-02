@@ -33,93 +33,111 @@ class TimelinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const highlightSpace = 20.0; // Space reserved for highlights at the top
+    const highlightSpace = 20.0; // reserved for highlights at the top
+    final totalDuration = endDate.difference(startDate);
+    if (totalDuration.inMilliseconds <= 0) return;
+    final pixelsPerUnit = size.width / totalDuration.inMilliseconds;
+
+    // Two-row axis: a fine tick row (day numbers / hours) above a context row
+    // (month / day-date / year). Both rows sized off the label font.
+    final fineFont = style.axisLabelStyle.fontSize ?? 11.0;
+    final rowH = fineFont + 6;
+    final labelHeight = rowH * 2;
+    final axisY = size.height - labelHeight;
+
+    // Faint context gridlines behind the bars so periods read as columns.
+    _drawContextGridlines(canvas, axisY, pixelsPerUnit);
+
+    // Stacked bars.
+    _drawStackedEventBars(
+        canvas, size, pixelsPerUnit, labelHeight, highlightSpace);
+
+    // Main horizontal axis line.
     final axisPaint = Paint()
       ..color = style.axisColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
+    canvas.drawLine(Offset(0, axisY), Offset(size.width, axisY), axisPaint);
 
-    final labelHeight = style.axisLabelStyle.fontSize! + 10; // Add some padding
-
-    // Draw the main horizontal axis
-    canvas.drawLine(Offset(0, size.height - labelHeight),
-        Offset(size.width, size.height - labelHeight), axisPaint);
-
-    // Calculate the time range and pixel per time unit
-    final totalDuration = endDate.difference(startDate);
-    final pixelsPerUnit = size.width / totalDuration.inMilliseconds;
-
-    // Day/night shading (behind everything) — only on the sub-day zoom.
-    _drawDayNightBands(canvas, size, pixelsPerUnit, labelHeight);
-
-    // Major separators (behind bars) — the coarser axis tier.
-    _drawMajorSeparators(canvas, size, pixelsPerUnit, labelHeight);
-
-    // Draw time labels
-    _drawTimeLabels(canvas, size, pixelsPerUnit, labelHeight);
-
-    // Draw stacked event bars
-    _drawStackedEventBars(
-        canvas, size, pixelsPerUnit, labelHeight, highlightSpace);
+    // Fine tick row (top) + context row (bottom).
+    _drawFineTicks(canvas, size, pixelsPerUnit, axisY, rowH);
+    _drawContextRow(canvas, size, pixelsPerUnit, axisY, rowH);
   }
 
-  /// Fixed-band day/night shading (20:00–06:00 local). Drawn only when a
-  /// shade color is set AND the bar interval is sub-day (otherwise a bar
-  /// already spans many nights and the band is meaningless).
-  void _drawDayNightBands(
-      Canvas canvas, Size size, double pixelsPerUnit, double labelHeight) {
-    final shade = style.dayNightShadeColor;
-    if (shade == null) return;
-    if (getLabelInterval() >= const Duration(days: 1)) return;
+  double _xOf(DateTime d, double pixelsPerUnit) =>
+      d.difference(startDate).inMilliseconds * pixelsPerUnit;
 
-    final paint = Paint()
-      ..color = shade
-      ..style = PaintingStyle.fill;
-    final top = 0.0;
-    final bottom = size.height - labelHeight;
-
-    // Walk each calendar day in range; shade [prev 20:00 .. 06:00] etc.
-    // Start a day early so a night straddling the left edge still paints.
-    var day = DateTime(startDate.year, startDate.month, startDate.day)
-        .subtract(const Duration(days: 1));
-    final end = endDate;
-    while (day.isBefore(end)) {
-      final nightStart = DateTime(day.year, day.month, day.day, 20);
-      final nightEnd = DateTime(day.year, day.month, day.day)
-          .add(const Duration(days: 1, hours: 6));
-      final x1 = nightStart.difference(startDate).inMilliseconds * pixelsPerUnit;
-      final x2 = nightEnd.difference(startDate).inMilliseconds * pixelsPerUnit;
-      final l = x1.clamp(0.0, size.width);
-      final r = x2.clamp(0.0, size.width);
-      if (r > l) {
-        canvas.drawRect(Rect.fromLTRB(l, top, r, bottom), paint);
-      }
-      day = day.add(const Duration(days: 1));
+  /// Faint full-height gridlines at the coarse (context) boundaries, behind
+  /// the bars, so each month/day/year reads as a column.
+  void _drawContextGridlines(
+      Canvas canvas, double axisY, double pixelsPerUnit) {
+    if (majorLabels.isEmpty) return;
+    final p = Paint()
+      ..color = style.axisColor.withValues(alpha: 0.16)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+    for (final label in majorLabels) {
+      final x = _xOf(label.dateTime, pixelsPerUnit);
+      if (x < 0) continue;
+      canvas.drawLine(Offset(x, 0), Offset(x, axisY), p);
     }
   }
 
-  /// Heavier vertical separators + bold labels at the coarse (major) tier.
-  void _drawMajorSeparators(
-      Canvas canvas, Size size, double pixelsPerUnit, double labelHeight) {
-    if (majorLabels.isEmpty) return;
-    final linePaint = Paint()
-      ..color = style.axisColor.withValues(alpha: 0.35)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-    final boldStyle = style.axisLabelStyle.copyWith(fontWeight: FontWeight.bold);
+  /// Fine tick row (just under the axis line): a short mark + the unit's own
+  /// value (day number / hour / month), centered on each tick.
+  void _drawFineTicks(Canvas canvas, Size size, double pixelsPerUnit,
+      double axisY, double rowH) {
+    final tickPaint = Paint()
+      ..color = style.axisColor.withValues(alpha: 0.5)
+      ..strokeWidth = 1;
     final tp = TextPainter(
       textDirection: TextDirection.ltr,
       textAlign: TextAlign.center,
     );
-    for (final label in majorLabels) {
-      final x =
-          label.dateTime.difference(startDate).inMilliseconds * pixelsPerUnit;
+    for (final label in visibleLabels) {
+      final x = _xOf(label.dateTime, pixelsPerUnit);
       if (x < 0 || x > size.width) continue;
-      canvas.drawLine(
-          Offset(x, 0), Offset(x, size.height - labelHeight), linePaint);
-      tp.text = TextSpan(text: label.text, style: boldStyle);
+      canvas.drawLine(Offset(x, axisY), Offset(x, axisY + 3), tickPaint);
+      tp.text = TextSpan(text: label.text, style: style.axisLabelStyle);
       tp.layout();
-      tp.paint(canvas, Offset(x + 3, size.height - labelHeight));
+      tp.paint(canvas, Offset(x - tp.width / 2, axisY + 3));
+    }
+  }
+
+  /// Context row (bottom): a stronger separator at each coarse boundary and
+  /// the span's name left-aligned just right of it, so every month/day/year
+  /// boundary is explicit and labelled. The first (partial) span is clamped
+  /// to the left edge.
+  void _drawContextRow(Canvas canvas, Size size, double pixelsPerUnit,
+      double axisY, double rowH) {
+    if (majorLabels.isEmpty) return;
+    final sepPaint = Paint()
+      ..color = style.axisColor.withValues(alpha: 0.6)
+      ..strokeWidth = 1.5;
+    final boldStyle =
+        style.axisLabelStyle.copyWith(fontWeight: FontWeight.bold);
+    final tp = TextPainter(
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.left,
+    );
+    final rowTop = axisY + rowH;
+    for (var i = 0; i < majorLabels.length; i++) {
+      final sepX = _xOf(majorLabels[i].dateTime, pixelsPerUnit);
+      final nextX = i + 1 < majorLabels.length
+          ? _xOf(majorLabels[i + 1].dateTime, pixelsPerUnit)
+          : size.width;
+      if (nextX <= 0) continue; // span entirely off the left edge
+      // Separator through the axis rows (gridline above handles the bars).
+      if (sepX >= 0 && sepX <= size.width) {
+        canvas.drawLine(Offset(sepX, axisY), Offset(sepX, size.height), sepPaint);
+      }
+      // Span label, left-aligned, clamped to the left edge for the first span.
+      final labelX = math.max(2.0, sepX + 4.0);
+      tp.text = TextSpan(text: majorLabels[i].text, style: boldStyle);
+      tp.layout();
+      if (nextX - labelX >= tp.width) {
+        tp.paint(canvas, Offset(labelX, rowTop));
+      }
     }
   }
 
@@ -133,29 +151,6 @@ class TimelinePainter extends CustomPainter {
         style != oldDelegate.style;
   }
 
-  void _drawTimeLabels(
-      Canvas canvas, Size size, double pixelsPerUnit, double labelHeight) {
-    final labelPaint = TextPainter(
-      textDirection: TextDirection.ltr,
-      textAlign: TextAlign.center,
-    );
-
-    for (var label in visibleLabels) {
-      final x =
-          label.dateTime.difference(startDate).inMilliseconds * pixelsPerUnit;
-
-      if (x >= 0 && x <= size.width) {
-        labelPaint.text = TextSpan(
-          text: label.text,
-          style: style.axisLabelStyle,
-        );
-        labelPaint.layout();
-        labelPaint.paint(canvas,
-            Offset(x - labelPaint.width / 2, size.height - labelHeight));
-      }
-    }
-  }
-
   void _drawStackedEventBars(Canvas canvas, Size size, double pixelsPerUnit,
       double labelHeight, double highlightSpace) {
     final maxTotalCount = groupedEvents.isNotEmpty
@@ -165,46 +160,58 @@ class TimelinePainter extends CustomPainter {
         : 0;
     final availableHeight = size.height - labelHeight - highlightSpace;
 
-    // Each bucket occupies a slot one interval wide. Draw the bar at ~70%
-    // of the slot (capped at maxBarPx) and center it, so wide slots render
-    // as a distinct bar with whitespace instead of a fat block.
-    final labelInterval = getLabelInterval();
-    final slotWidth = labelInterval.inMilliseconds * pixelsPerUnit;
-    const maxBarPx = 22.0;
-    final barWidth = math.max(1.0, math.min(slotWidth * 0.7, maxBarPx));
+    // Each bucket occupies a slot one interval wide. Fill ~85% of the slot
+    // (capped) and center it — reads as a histogram, not floating sticks, and
+    // adaptive bucketing keeps slots from becoming full-width walls.
+    final slotWidth = getLabelInterval().inMilliseconds * pixelsPerUnit;
+    const maxBarPx = 40.0;
+    final barWidth = math.max(2.0, math.min(slotWidth * 0.85, maxBarPx));
     final barInset = (slotWidth - barWidth) / 2;
+    final axisY = size.height - labelHeight;
+    // Any non-zero bucket gets at least this many px so single events stay
+    // visible next to the bulk-upload spike (Kibana min-bar pattern).
+    const minTotalPx = 3.0;
 
     groupedEvents.forEach((dateTime, events) {
-      final x = dateTime.difference(startDate).inMilliseconds * pixelsPerUnit +
-          barInset;
-      double yOffset = size.height - labelHeight;
+      final x = _xOf(dateTime, pixelsPerUnit) + barInset;
 
-      // Sort events alphabetically by tag
+      // Sort events alphabetically by tag for stable stacking.
       events.sort((a, b) => a.tag.compareTo(b.tag));
 
-      double totalBarHeight = 0;
+      // Per-segment fraction of availableHeight, with the stack normalized so
+      // it never exceeds the available height.
+      double totalFrac = 0;
+      for (final e in events) {
+        totalFrac += _calculateBarHeight(e.value, maxTotalCount);
+      }
+      if (totalFrac <= 0) return;
+      final scaleFactor = totalFrac > 1 ? 1 / totalFrac : 1;
 
-      for (var event in events) {
-        double barHeight = _calculateBarHeight(event.value, maxTotalCount);
-        totalBarHeight += barHeight;
+      final segPx = <double>[];
+      double totalPx = 0;
+      for (final e in events) {
+        final h =
+            _calculateBarHeight(e.value, maxTotalCount) * scaleFactor * availableHeight;
+        segPx.add(h);
+        totalPx += h;
+      }
+      // Boost the whole stack to the minimum visible height if needed.
+      if (totalPx > 0 && totalPx < minTotalPx) {
+        final boost = minTotalPx / totalPx;
+        for (var i = 0; i < segPx.length; i++) {
+          segPx[i] *= boost;
+        }
       }
 
-      // Scale factor to ensure total height doesn't exceed available height
-      final scaleFactor = totalBarHeight > 1 ? 1 / totalBarHeight : 1;
-
-      for (var event in events) {
-        double barHeight = _calculateBarHeight(event.value, maxTotalCount) *
-            scaleFactor *
-            availableHeight;
-
+      double yOffset = axisY;
+      for (var i = 0; i < events.length; i++) {
+        final barHeight = segPx[i];
         final barPaint = Paint()
-          ..color = tagStyles[event.tag]?.color ?? Colors.grey
+          ..color = tagStyles[events[i].tag]?.color ?? Colors.grey
           ..style = PaintingStyle.fill;
-
         canvas.drawRect(
             Rect.fromLTWH(x, yOffset - barHeight, barWidth, barHeight),
             barPaint);
-
         yOffset -= barHeight;
       }
     });

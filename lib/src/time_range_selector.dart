@@ -61,9 +61,10 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   late DateTime _currentEndDate;
   late DateTime _currentStartDate;
   Map<DateTime, List<GroupedEvent>> _groupedEvents = {};
+  // Two-row ruler: fine ticks (day numbers / hours) on the top row...
   final List<LabelInfo> _visibleLabels = [];
-  // Coarser "major" boundaries (month/year/day) for the two-tier axis —
-  // heavier separators + bold labels drawn by the painter.
+  // ...and the coarser context spans (month / day-date / year) on the bottom
+  // row — one label per boundary, painted left-aligned with a separator line.
   final List<LabelInfo> _majorLabels = [];
   double _widgetWidth = 0;
   late double _zoomFactor; // milliseconds per pixel
@@ -75,8 +76,12 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   @override
   void initState() {
     super.initState();
-    _currentStartDate = widget.startDate;
-    _currentEndDate = widget.endDate;
+    // Work entirely in LOCAL time so calendar alignment (align/next) and the
+    // axis labels land on local 00:00 / Monday / 1st — the data buckets are
+    // already local. Mixing UTC start/end with local alignment put ticks on
+    // UTC hours (e.g. 05:00 instead of 06:00).
+    _currentStartDate = widget.startDate.toLocal();
+    _currentEndDate = widget.endDate.toLocal();
     _zoomFactor = _calculateInitialZoomFactor().clamp(
       widget.minZoomFactor,
       widget.maxZoomFactor,
@@ -162,48 +167,42 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     double xOf(DateTime d) =>
         d.difference(_currentStartDate).inMilliseconds * pxPerMs;
 
-    // Minor labels: ~1 per 110px (Extended-Wilkinson density rule), never
-    // finer than the bars. Calendar-aligned so they land on 00:00/Mon/1st.
-    final labelIv = pickCalendarInterval(
+    // Fine tick row: ~1 per 110px (Extended-Wilkinson density rule), never
+    // finer than the bars. Calendar-aligned to local 00:00/Mon/1st. Labels
+    // are the unit's own value only (day number / hour / month) — the coarse
+    // context lives in the row below.
+    final fineIv = pickCalendarInterval(
       rangeMs: rangeMs,
       targetCount: _widgetWidth / 110,
       min: _barInterval,
     );
-
-    // Major boundaries: the next coarser calendar unit (day→month→year).
-    // Drawn as heavier separators + bold labels so periods are visually
-    // grouped (e.g. months distinguished on a multi-week view).
-    final majorIv = majorIntervalFor(labelIv.unit);
-    final majorXs = <double>[];
-    if (majorIv != null) {
-      DateTime m = majorIv.align(_currentStartDate);
-      if (m.isBefore(_currentStartDate)) m = majorIv.next(m);
-      double lastX = -1e9;
-      while (m.isBefore(_currentEndDate)) {
-        final x = xOf(m);
-        if (x - lastX >= 60.0) {
-          _majorLabels.add(LabelInfo(m, majorIv.label(m)));
-          majorXs.add(x);
-          lastX = x;
-        }
-        m = majorIv.next(m);
-      }
-    }
-
-    // Minor labels, thinned against each other AND against the majors so a
-    // bold month label never collides with a minor day label.
-    DateTime cur = labelIv.align(_currentStartDate);
-    if (cur.isBefore(_currentStartDate)) cur = labelIv.next(cur);
-    double lastX = -1e9;
-    const minGapPx = 55.0;
+    DateTime cur = fineIv.align(_currentStartDate);
+    if (cur.isBefore(_currentStartDate)) cur = fineIv.next(cur);
+    double lastTickX = -1e9;
+    const minGapPx = 42.0;
     while (cur.isBefore(_currentEndDate)) {
       final x = xOf(cur);
-      final nearMajor = majorXs.any((mx) => (mx - x).abs() < minGapPx);
-      if (!nearMajor && x - lastX >= minGapPx) {
-        _visibleLabels.add(LabelInfo(cur, labelIv.label(cur)));
-        lastX = x;
+      if (x - lastTickX >= minGapPx) {
+        _visibleLabels.add(LabelInfo(cur, fineIv.tickLabel(cur)));
+        lastTickX = x;
       }
-      cur = labelIv.next(cur);
+      cur = fineIv.next(cur);
+    }
+
+    // Context row: the next coarser calendar unit (hour→day, day/week→month,
+    // month→year). One label per span, carried on its boundary DateTime — the
+    // painter draws a separator line there and left-aligns the span label.
+    final contextIv = majorIntervalFor(fineIv.unit);
+    if (contextIv != null) {
+      DateTime m = contextIv.align(_currentStartDate);
+      // Include the boundary at/just-before start so the first (partial) span
+      // is still labelled at the left edge.
+      while (m.isBefore(_currentEndDate)) {
+        if (!m.isBefore(_currentStartDate) || contextIv.next(m).isAfter(_currentStartDate)) {
+          _majorLabels.add(LabelInfo(m, contextIv.spanLabel(m)));
+        }
+        m = contextIv.next(m);
+      }
     }
   }
 
