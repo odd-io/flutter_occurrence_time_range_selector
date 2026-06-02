@@ -45,8 +45,8 @@ class TimelinePainter extends CustomPainter {
     final labelHeight = rowH * 2;
     final axisY = size.height - labelHeight;
 
-    // Faint context gridlines behind the bars so periods read as columns.
-    _drawContextGridlines(canvas, axisY, pixelsPerUnit);
+    // Faint gridlines behind the bars (fine ticks + context boundaries).
+    _drawGridlines(canvas, axisY, pixelsPerUnit);
 
     // Stacked bars.
     _drawStackedEventBars(
@@ -67,19 +67,29 @@ class TimelinePainter extends CustomPainter {
   double _xOf(DateTime d, double pixelsPerUnit) =>
       d.difference(startDate).inMilliseconds * pixelsPerUnit;
 
-  /// Faint full-height gridlines at the coarse (context) boundaries, behind
-  /// the bars, so each month/day/year reads as a column.
-  void _drawContextGridlines(
-      Canvas canvas, double axisY, double pixelsPerUnit) {
-    if (majorLabels.isEmpty) return;
-    final p = Paint()
+  /// Faint full-height gridlines behind the bars: very light at every fine
+  /// tick — consistent vertical "separation lines" at all zooms, including
+  /// inside a single period where no context boundary is on screen — and
+  /// slightly stronger at the context boundaries so periods still read as
+  /// columns.
+  void _drawGridlines(Canvas canvas, double axisY, double pixelsPerUnit) {
+    final fine = Paint()
+      ..color = style.axisColor.withValues(alpha: 0.07)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+    for (final label in visibleLabels) {
+      final x = _xOf(label.dateTime, pixelsPerUnit);
+      if (x < 0) continue;
+      canvas.drawLine(Offset(x, 0), Offset(x, axisY), fine);
+    }
+    final ctx = Paint()
       ..color = style.axisColor.withValues(alpha: 0.16)
       ..strokeWidth = 1
       ..style = PaintingStyle.stroke;
     for (final label in majorLabels) {
       final x = _xOf(label.dateTime, pixelsPerUnit);
       if (x < 0) continue;
-      canvas.drawLine(Offset(x, 0), Offset(x, axisY), p);
+      canvas.drawLine(Offset(x, 0), Offset(x, axisY), ctx);
     }
   }
 
@@ -104,10 +114,11 @@ class TimelinePainter extends CustomPainter {
     }
   }
 
-  /// Context row (bottom): a stronger separator at each coarse boundary and
-  /// the span's name left-aligned just right of it, so every month/day/year
-  /// boundary is explicit and labelled. The first (partial) span is clamped
-  /// to the left edge.
+  /// Context row (bottom): a stronger separator at each coarse boundary, plus
+  /// the span's name. Placement rule (user): when ONE period fills the whole
+  /// view (no boundary on screen) the label is CENTERED — a "you are in May
+  /// 2026" header that stays put as you pan; when MULTIPLE periods are visible
+  /// each label is left-aligned right after its boundary.
   void _drawContextRow(Canvas canvas, Size size, double pixelsPerUnit,
       double axisY, double rowH) {
     if (majorLabels.isEmpty) return;
@@ -121,17 +132,39 @@ class TimelinePainter extends CustomPainter {
       textAlign: TextAlign.left,
     );
     final rowTop = axisY + rowH;
+
+    // Draw separators for on-screen boundaries; count the ones strictly inside
+    // the viewport (i.e. genuine period changes the user can see).
+    var internalVisible = 0;
+    for (final l in majorLabels) {
+      final sepX = _xOf(l.dateTime, pixelsPerUnit);
+      if (sepX >= 0 && sepX <= size.width) {
+        canvas.drawLine(
+            Offset(sepX, axisY), Offset(sepX, size.height), sepPaint);
+        if (sepX > 1) internalVisible++;
+      }
+    }
+
+    // Single period fills the view → center its label.
+    if (internalVisible == 0) {
+      // The covering span is the last boundary at/left of the viewport start.
+      LabelInfo span = majorLabels.first;
+      for (final l in majorLabels) {
+        if (_xOf(l.dateTime, pixelsPerUnit) <= 0) span = l;
+      }
+      tp.text = TextSpan(text: span.text, style: boldStyle);
+      tp.layout();
+      tp.paint(canvas, Offset((size.width - tp.width) / 2, rowTop));
+      return;
+    }
+
+    // Multiple periods → left-align each label after its separator.
     for (var i = 0; i < majorLabels.length; i++) {
       final sepX = _xOf(majorLabels[i].dateTime, pixelsPerUnit);
       final nextX = i + 1 < majorLabels.length
           ? _xOf(majorLabels[i + 1].dateTime, pixelsPerUnit)
           : size.width;
       if (nextX <= 0) continue; // span entirely off the left edge
-      // Separator through the axis rows (gridline above handles the bars).
-      if (sepX >= 0 && sepX <= size.width) {
-        canvas.drawLine(Offset(sepX, axisY), Offset(sepX, size.height), sepPaint);
-      }
-      // Span label, left-aligned, clamped to the left edge for the first span.
       final labelX = math.max(2.0, sepX + 4.0);
       tp.text = TextSpan(text: majorLabels[i].text, style: boldStyle);
       tp.layout();
@@ -160,11 +193,12 @@ class TimelinePainter extends CustomPainter {
         : 0;
     final availableHeight = size.height - labelHeight - highlightSpace;
 
-    // Each bucket occupies a slot one interval wide. Fill ~85% of the slot
-    // (capped) and center it — reads as a histogram, not floating sticks, and
-    // adaptive bucketing keeps slots from becoming full-width walls.
+    // Each bucket occupies a slot one interval wide. Fill ~85% of the slot but
+    // cap the width so bars stay a CONSISTENT thin size across zoom levels —
+    // when the interval coarsens (and data is sparse) an uncapped bar balloons
+    // into a fat isolated block that looks like a different chart.
     final slotWidth = getLabelInterval().inMilliseconds * pixelsPerUnit;
-    const maxBarPx = 40.0;
+    const maxBarPx = 12.0;
     final barWidth = math.max(2.0, math.min(slotWidth * 0.85, maxBarPx));
     final barInset = (slotWidth - barWidth) / 2;
     final axisY = size.height - labelHeight;

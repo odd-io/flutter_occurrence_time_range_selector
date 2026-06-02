@@ -174,11 +174,22 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     // finer than the bars. Calendar-aligned to local 00:00/Mon/1st. Labels
     // are the unit's own value only (day number / hour / month) — the coarse
     // context lives in the row below.
-    final fineIv = pickCalendarInterval(
+    var fineIv = pickCalendarInterval(
       rangeMs: rangeMs,
       targetCount: _widgetWidth / 110,
       min: _barInterval,
     );
+    // High-zoom guarantee: at a sub-/few-day view always show time-of-day. If
+    // the bar floor is coarse the fine ticks would otherwise degrade to day
+    // numbers and the context would coarsen to the month (its boundaries
+    // off-screen), leaving no readable time ("what time is this?"). Force a
+    // sub-day rung so ticks render HH:mm and the context stays a day.
+    const twoDaysMs = 2 * 86400 * 1000;
+    if (rangeMs <= twoDaysMs &&
+        fineIv.approxMs >=
+            const CalendarInterval(CalendarUnit.day, 1).approxMs) {
+      fineIv = const CalendarInterval(CalendarUnit.hour, 12);
+    }
     DateTime cur = fineIv.align(_currentStartDate);
     if (cur.isBefore(_currentStartDate)) cur = fineIv.next(cur);
     double lastTickX = -1e9;
