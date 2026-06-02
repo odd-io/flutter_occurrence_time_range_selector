@@ -20,7 +20,7 @@ class TimelinePainter extends CustomPainter {
   });
 
   final DateTime endDate;
-  final Function() getLabelInterval;
+  final Duration Function() getLabelInterval;
   final Map<DateTime, List<GroupedEvent>> groupedEvents;
   final DateTime startDate;
   final TimelineStyle style;
