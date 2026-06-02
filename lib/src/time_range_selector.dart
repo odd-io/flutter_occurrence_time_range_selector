@@ -1,7 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' as intl;
 
+import 'calendar_interval.dart';
 import 'grouped_event.dart';
 import 'highlight_group.dart';
 import 'label_info.dart';
@@ -15,7 +15,8 @@ class TimeRangeSelector extends StatefulWidget {
     super.key,
     required this.startDate,
     required this.endDate,
-    required this.events,
+    this.events = const [],
+    this.preAggregated,
     required this.tagStyles,
     this.onRangeChanged,
     required this.style,
@@ -26,7 +27,19 @@ class TimeRangeSelector extends StatefulWidget {
 
   final Function(DateTime, DateTime)? onRangeChanged;
   final DateTime endDate;
+
+  /// Per-occurrence input (one [TimeEvent] per event). The widget counts
+  /// these into per-bucket totals. Use [preAggregated] instead when you
+  /// already have server-side counts — it avoids materializing one object
+  /// per event (the timeline only ever needs counts).
   final List<TimeEvent> events;
+
+  /// Pre-aggregated counts: bucketStart (a fine base grid, e.g. daily) →
+  /// {tag: count}. When provided, [events] is ignored and the widget
+  /// re-aggregates this base grid to the current calendar-nice display
+  /// interval. This is the production-shaped path (no per-event objects).
+  final Map<DateTime, Map<String, int>>? preAggregated;
+
   final List<HighlightGroup> highlightGroups;
   final double maxZoomFactor;
   final double minZoomFactor;
@@ -40,13 +53,15 @@ class TimeRangeSelector extends StatefulWidget {
 
 class TimeRangeSelectorState extends State<TimeRangeSelector> {
   late DateTime _currentEndDate;
-  Duration _currentGroupingInterval = Duration.zero;
   late DateTime _currentStartDate;
   Map<DateTime, List<GroupedEvent>> _groupedEvents = {};
   final List<LabelInfo> _visibleLabels = [];
-  late double _widgetWidth;
+  double _widgetWidth = 0;
   late double _zoomFactor; // milliseconds per pixel
   double? _initialScaleZoomFactor;
+
+  // Current calendar-aligned bar/grouping interval (chosen from range + width).
+  CalendarInterval? _barInterval;
 
   @override
   void initState() {
@@ -57,7 +72,16 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
       widget.minZoomFactor,
       widget.maxZoomFactor,
     );
-    _updateGroupedEvents();
+    // Grouping + labels are computed in build(), once the widget width is known.
+  }
+
+  @override
+  void didUpdateWidget(TimeRangeSelector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(widget.events, oldWidget.events) ||
+        !identical(widget.preAggregated, oldWidget.preAggregated)) {
+      _barInterval = null; // force re-group on next build
+    }
   }
 
   double _calculateInitialZoomFactor() {
@@ -65,130 +89,83 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     return range.inMilliseconds / 1000;
   }
 
-  void _generateLabels() {
-    _visibleLabels.clear();
-    final labelInterval = _calculateDynamicLabelInterval();
-    DateTime currentLabel =
-        _alignToLabelInterval(_currentStartDate, labelInterval);
+  /// Finest calendar interval we may aggregate to. With pre-aggregated input
+  /// the base grid is daily, so we can't render finer than a day.
+  CalendarInterval? get _minInterval =>
+      widget.preAggregated != null ? const CalendarInterval(CalendarUnit.day, 1) : null;
 
-    while (currentLabel.isBefore(_currentEndDate)) {
-      _visibleLabels.add(LabelInfo(currentLabel, _formatLabel(currentLabel)));
-      currentLabel = currentLabel.add(labelInterval);
+  /// Recompute bars + labels for the current range/width. Called from build()
+  /// (and therefore after every pan/zoom setState). Re-groups only when the
+  /// chosen bar interval actually changes, so panning is cheap.
+  void _recompute() {
+    final rangeMs = _currentEndDate.difference(_currentStartDate).inMilliseconds;
+    if (rangeMs <= 0 || _widgetWidth <= 0) return;
+
+    // Bars: target a comfortable density (~1 bar per 4px), never finer than
+    // the base grid. Calendar-aligned so bars sit on day/week/month edges.
+    final newBar = pickCalendarInterval(
+      rangeMs: rangeMs,
+      targetCount: _widgetWidth / 4,
+      min: _minInterval,
+    );
+    if (_barInterval == null ||
+        newBar.unit != _barInterval!.unit ||
+        newBar.count != _barInterval!.count) {
+      _barInterval = newBar;
+      _groupedEvents = _groupEvents(newBar);
     }
+    _generateLabels();
   }
 
-  Duration _calculateDynamicLabelInterval() {
-    // Aim for approximately 1 label per 100 pixels
-    final desiredLabelCount = (_widgetWidth / 100).round();
-    final totalMilliseconds =
-        _currentEndDate.difference(_currentStartDate).inMilliseconds;
-    final millisecondsPerLabel = totalMilliseconds / desiredLabelCount;
-
-    // Round to nearest sensible interval
-    if (millisecondsPerLabel < 1000) {
-      return Duration(milliseconds: (millisecondsPerLabel / 100).ceil() * 100);
-    } else if (millisecondsPerLabel < 60000) {
-      // Less than a minute
-      return Duration(
-          milliseconds: (millisecondsPerLabel / 1000).ceil() * 1000);
-    } else if (millisecondsPerLabel < 3600000) {
-      // Less than an hour
-      return Duration(minutes: (millisecondsPerLabel / 60000).ceil());
-    } else if (millisecondsPerLabel < 86400000) {
-      // Less than a day
-      return Duration(hours: (millisecondsPerLabel / 3600000).ceil());
-    } else if (millisecondsPerLabel < 604800000) {
-      // Less than a week
-      return Duration(days: (millisecondsPerLabel / 86400000).ceil());
-    } else if (millisecondsPerLabel < 2592000000) {
-      // Less than a month
-      return Duration(days: ((millisecondsPerLabel / 604800000).ceil() * 7));
+  /// Build per-bucket counts, aligned to [bar]. Works for both the
+  /// pre-aggregated base grid and the raw per-event list.
+  Map<DateTime, List<GroupedEvent>> _groupEvents(CalendarInterval bar) {
+    final buckets = <DateTime, Map<String, int>>{};
+    final pre = widget.preAggregated;
+    if (pre != null) {
+      pre.forEach((day, tagCounts) {
+        final key = bar.align(day);
+        final m = buckets.putIfAbsent(key, () => {});
+        tagCounts.forEach((tag, c) => m[tag] = (m[tag] ?? 0) + c);
+      });
     } else {
-      return Duration(days: ((millisecondsPerLabel / 2592000000).ceil() * 30));
-    }
-  }
-
-  DateTime _alignToLabelInterval(DateTime date, Duration interval) {
-    return DateTime.fromMillisecondsSinceEpoch(
-        (date.millisecondsSinceEpoch / interval.inMilliseconds).floor() *
-            interval.inMilliseconds);
-  }
-
-  String _formatLabel(DateTime date) {
-    final interval = _calculateDynamicLabelInterval();
-    if (interval.inMilliseconds < 1000) {
-      return intl.DateFormat('HH:mm:ss.SSS').format(date);
-    } else if (interval.inMilliseconds < 60000) {
-      return intl.DateFormat('HH:mm:ss').format(date);
-    } else if (interval.inMinutes < 60) {
-      return intl.DateFormat('HH:mm').format(date);
-    } else if (interval.inHours < 24) {
-      return intl.DateFormat('dd.MM HH:mm').format(date);
-    } else if (interval.inDays < 7) {
-      return intl.DateFormat('dd.MM').format(date);
-    } else if (interval.inDays < 30) {
-      return 'Week ${((date.day - 1) ~/ 7) + 1} ${intl.DateFormat('MMM').format(date)}';
-    } else if (interval.inDays < 365) {
-      return intl.DateFormat('MMM yyyy').format(date);
-    } else {
-      return date.year.toString();
-    }
-  }
-
-  void _updateGroupedEvents() {
-    final newGroupingInterval = _calculateGroupingInterval();
-    if (newGroupingInterval != _currentGroupingInterval) {
-      _currentGroupingInterval = newGroupingInterval;
-      _groupedEvents =
-          _groupEventsByInterval(widget.events, _currentGroupingInterval);
-    }
-  }
-
-  Duration _calculateGroupingInterval() {
-    if (_zoomFactor < 1) return const Duration(milliseconds: 1);
-    if (_zoomFactor < 10) return const Duration(milliseconds: 10);
-    if (_zoomFactor < 100) return const Duration(milliseconds: 100);
-    if (_zoomFactor < 1000) return const Duration(seconds: 1);
-    if (_zoomFactor < 5000) return const Duration(seconds: 5);
-    if (_zoomFactor < 15000) return const Duration(seconds: 15);
-    if (_zoomFactor < 30000) return const Duration(seconds: 30);
-    if (_zoomFactor < 60000) return const Duration(minutes: 1);
-    if (_zoomFactor < 300000) return const Duration(minutes: 5);
-    if (_zoomFactor < 900000) return const Duration(minutes: 15);
-    if (_zoomFactor < 1800000) return const Duration(minutes: 30);
-    if (_zoomFactor < 3600000) return const Duration(hours: 1);
-    if (_zoomFactor < 7200000) return const Duration(hours: 2);
-    if (_zoomFactor < 21600000) return const Duration(hours: 6);
-    if (_zoomFactor < 43200000) return const Duration(hours: 12);
-    if (_zoomFactor < 86400000) return const Duration(days: 1);
-    if (_zoomFactor < 604800000) return const Duration(days: 7);
-    if (_zoomFactor < 2592000000) return const Duration(days: 30);
-    if (_zoomFactor < 7776000000) return const Duration(days: 90);
-    if (_zoomFactor < 15552000000) return const Duration(days: 180);
-    return const Duration(days: 365);
-  }
-
-  Map<DateTime, List<GroupedEvent>> _groupEventsByInterval(
-      List<TimeEvent> events, Duration interval) {
-    // Use nested Map for O(1) tag lookup
-    final buckets = <DateTime, Map<String, GroupedEvent>>{};
-
-    for (var event in events) {
-      final groupKey = DateTime.fromMillisecondsSinceEpoch(
-          (event.dateTime.millisecondsSinceEpoch ~/ interval.inMilliseconds) *
-              interval.inMilliseconds);
-
-      final tagMap = buckets.putIfAbsent(groupKey, () => {});
-      final existing = tagMap[event.tag];
-      if (existing != null) {
-        existing.value++;
-      } else {
-        tagMap[event.tag] = GroupedEvent(tag: event.tag, value: 1);
+      for (final e in widget.events) {
+        final key = bar.align(e.dateTime);
+        final m = buckets.putIfAbsent(key, () => {});
+        m[e.tag] = (m[e.tag] ?? 0) + 1;
       }
     }
+    return buckets.map((key, m) => MapEntry(
+        key, m.entries.map((e) => GroupedEvent(tag: e.key, value: e.value)).toList()));
+  }
 
-    // Convert to List<GroupedEvent> per bucket
-    return buckets.map((key, tagMap) => MapEntry(key, tagMap.values.toList()));
+  void _generateLabels() {
+    _visibleLabels.clear();
+    final rangeMs = _currentEndDate.difference(_currentStartDate).inMilliseconds;
+    if (rangeMs <= 0 || _widgetWidth <= 0) return;
+
+    // Labels: ~1 per 110px (Extended-Wilkinson density rule), never finer
+    // than the bars. Calendar-aligned so they land on 00:00 / Mon / 1st.
+    final labelIv = pickCalendarInterval(
+      rangeMs: rangeMs,
+      targetCount: _widgetWidth / 110,
+      min: _barInterval,
+    );
+    final pxPerMs = _widgetWidth / rangeMs;
+
+    DateTime cur = labelIv.align(_currentStartDate);
+    if (cur.isBefore(_currentStartDate)) cur = labelIv.next(cur);
+
+    double lastX = -1e9;
+    const minGapPx = 55.0; // hard overlap guard
+    while (cur.isBefore(_currentEndDate)) {
+      final x = cur.difference(_currentStartDate).inMilliseconds * pxPerMs;
+      if (x - lastX >= minGapPx) {
+        _visibleLabels.add(LabelInfo(cur, labelIv.label(cur)));
+        lastX = x;
+      }
+      cur = labelIv.next(cur);
+    }
   }
 
   List<Widget> _buildHighlights(BoxConstraints constraints) {
@@ -238,9 +215,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
 
         _currentStartDate = middlePoint.subtract(newHalfRange);
         _currentEndDate = middlePoint.add(newHalfRange);
-
-        _updateGroupedEvents();
-        _generateLabels();
+        // bars + labels recomputed in build() via _recompute().
       });
       widget.onRangeChanged?.call(_currentStartDate, _currentEndDate);
     }
@@ -267,7 +242,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     setState(() {
       _currentStartDate = _currentStartDate.add(shiftDuration);
       _currentEndDate = _currentEndDate.add(shiftDuration);
-      _generateLabels();
+      // labels recomputed in build() via _recompute().
     });
 
     widget.onRangeChanged?.call(_currentStartDate, _currentEndDate);
@@ -293,9 +268,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
 
         _currentStartDate = middlePoint.subtract(newHalfRange);
         _currentEndDate = middlePoint.add(newHalfRange);
-
-        _updateGroupedEvents();
-        _generateLabels();
+        // bars + labels recomputed in build() via _recompute().
       });
       widget.onRangeChanged?.call(_currentStartDate, _currentEndDate);
     }
@@ -316,7 +289,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     return LayoutBuilder(
       builder: (context, constraints) {
         _widgetWidth = constraints.maxWidth;
-        _generateLabels();
+        _recompute();
         return Stack(
           children: [
             RawGestureDetector(
@@ -354,7 +327,8 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
                       zoomFactor: _zoomFactor,
                       style: widget.style,
                       visibleLabels: _visibleLabels,
-                      getLabelInterval: _calculateGroupingInterval,
+                      getLabelInterval: () =>
+                          _barInterval?.approxDuration ?? const Duration(days: 1),
                     ),
                   ),
                 ),
