@@ -120,11 +120,14 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     final rangeMs = _currentEndDate.difference(_currentStartDate).inMilliseconds;
     if (rangeMs <= 0 || _widgetWidth <= 0) return;
 
-    // Bars: target a comfortable density (~1 bar per 4px), never finer than
-    // the base grid. Calendar-aligned so bars sit on day/week/month edges.
+    // Bars: aim for ~1 bar per 24px so the interval WALKS the calendar ladder
+    // as you zoom (1h→3h→6h→12h→1d→1w…), ~2x per step — instead of always
+    // grabbing the finest rung and then leaping 1h→1d at a threshold. This is
+    // the D3 scaleTime / Grafana auto-interval behaviour. Never finer than the
+    // base grid. Tunable: smaller divisor = more, thinner bars + bigger steps.
     final newBar = pickCalendarInterval(
       rangeMs: rangeMs,
-      targetCount: _widgetWidth / 4,
+      targetCount: _widgetWidth / 24,
       min: _minInterval,
     );
     if (_barInterval == null ||
