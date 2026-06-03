@@ -66,7 +66,8 @@ class CalendarInterval {
       case CalendarUnit.month:
         return DateTime(d.year, ((d.month - 1) ~/ count) * count + 1, 1);
       case CalendarUnit.year:
-        return DateTime(d.year, 1, 1);
+        // count-aware so decade/5-year rungs anchor to 1980, 1990, … etc.
+        return DateTime((d.year ~/ count) * count, 1, 1);
     }
   }
 
@@ -178,6 +179,9 @@ const List<CalendarInterval> kCalendarLadder = [
   CalendarInterval(CalendarUnit.month, 3), // quarter
   CalendarInterval(CalendarUnit.month, 6),
   CalendarInterval(CalendarUnit.year, 1),
+  CalendarInterval(CalendarUnit.year, 2),
+  CalendarInterval(CalendarUnit.year, 5),
+  CalendarInterval(CalendarUnit.year, 10), // decade
 ];
 
 /// The coarser "major" interval to pair with a given minor [unit] for a
