@@ -112,14 +112,24 @@ class TimelinePainter extends CustomPainter {
       for (final l in majorLabels) l.dateTime.millisecondsSinceEpoch
     };
     for (final label in visibleLabels) {
-      if (label.text.contains(':') &&
-          majorMs.contains(label.dateTime.millisecondsSinceEpoch)) continue;
+      final onBoundary =
+          majorMs.contains(label.dateTime.millisecondsSinceEpoch);
+      // Drop clock ticks that land on a boundary (00:00 is redundant with the
+      // date); keep calendar ticks (Jan, day numbers).
+      if (label.text.contains(':') && onBoundary) continue;
       final x = _xOf(label.dateTime, pixelsPerUnit);
       if (x < 0 || x > size.width) continue;
-      canvas.drawLine(Offset(x, axisY), Offset(x, axisY + 3), tickPaint);
       tp.text = TextSpan(text: label.text, style: style.axisLabelStyle);
       tp.layout();
-      tp.paint(canvas, Offset(x - tp.width / 2, axisY + 3));
+      if (onBoundary) {
+        // The context separator already marks this instant — left-align the
+        // label just right of the line (like the context label below it) so
+        // e.g. "Jan" stacks above the year instead of straddling the line.
+        tp.paint(canvas, Offset(x + 4, axisY + 3));
+      } else {
+        canvas.drawLine(Offset(x, axisY), Offset(x, axisY + 3), tickPaint);
+        tp.paint(canvas, Offset(x - tp.width / 2, axisY + 3));
+      }
     }
   }
 
