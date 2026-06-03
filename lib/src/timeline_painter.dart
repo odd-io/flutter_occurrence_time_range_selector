@@ -231,41 +231,27 @@ class TimelinePainter extends CustomPainter {
       // Sort events alphabetically by tag for stable stacking.
       events.sort((a, b) => a.tag.compareTo(b.tag));
 
-      // Per-segment fraction of availableHeight, with the stack normalized so
-      // it never exceeds the available height.
-      double totalFrac = 0;
-      for (final e in events) {
-        totalFrac += _calculateBarHeight(e.value, maxTotalCount);
-      }
-      if (totalFrac <= 0) return;
-      final scaleFactor = totalFrac > 1 ? 1 / totalFrac : 1;
+      // The bar's height comes from the bucket TOTAL run through the scale
+      // (correct for linear/sqrt/log, and always <= 1 since total <=
+      // maxTotalCount — no clamp needed). Applying the scale per-mime and
+      // summing was wrong: √a+√b > √(a+b), so multi-mime days were inflated
+      // and any busy day clamped to full height (different days → identical
+      // bars). Floor to the min so any non-zero bucket stays visible.
+      final total = events.fold<int>(0, (s, e) => s + e.value);
+      if (total <= 0) return;
+      var barPx = _calculateBarHeight(total, maxTotalCount) * availableHeight;
+      if (barPx < minTotalPx) barPx = minTotalPx;
 
-      final segPx = <double>[];
-      double totalPx = 0;
-      for (final e in events) {
-        final h =
-            _calculateBarHeight(e.value, maxTotalCount) * scaleFactor * availableHeight;
-        segPx.add(h);
-        totalPx += h;
-      }
-      // Boost the whole stack to the minimum visible height if needed.
-      if (totalPx > 0 && totalPx < minTotalPx) {
-        final boost = minTotalPx / totalPx;
-        for (var i = 0; i < segPx.length; i++) {
-          segPx[i] *= boost;
-        }
-      }
-
+      // Split that height across mimes proportionally for the stacked colours.
       double yOffset = axisY;
-      for (var i = 0; i < events.length; i++) {
-        final barHeight = segPx[i];
+      for (final e in events) {
+        final segPx = barPx * (e.value / total);
         final barPaint = Paint()
-          ..color = tagStyles[events[i].tag]?.color ?? Colors.grey
+          ..color = tagStyles[e.tag]?.color ?? Colors.grey
           ..style = PaintingStyle.fill;
         canvas.drawRect(
-            Rect.fromLTWH(x, yOffset - barHeight, barWidth, barHeight),
-            barPaint);
-        yOffset -= barHeight;
+            Rect.fromLTWH(x, yOffset - segPx, barWidth, segPx), barPaint);
+        yOffset -= segPx;
       }
     });
   }
