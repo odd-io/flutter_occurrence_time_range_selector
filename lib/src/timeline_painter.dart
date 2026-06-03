@@ -104,7 +104,14 @@ class TimelinePainter extends CustomPainter {
       textDirection: TextDirection.ltr,
       textAlign: TextAlign.center,
     );
+    // Skip fine ticks that coincide with a context boundary (e.g. the 00:00
+    // under each day label) — the date label already marks that instant, so
+    // the duplicate just clutters. Only exact coincidences are removed.
+    final majorMs = {
+      for (final l in majorLabels) l.dateTime.millisecondsSinceEpoch
+    };
     for (final label in visibleLabels) {
+      if (majorMs.contains(label.dateTime.millisecondsSinceEpoch)) continue;
       final x = _xOf(label.dateTime, pixelsPerUnit);
       if (x < 0 || x > size.width) continue;
       canvas.drawLine(Offset(x, axisY), Offset(x, axisY + 3), tickPaint);

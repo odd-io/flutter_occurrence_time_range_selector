@@ -327,9 +327,14 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   }
 
   Map<DateTime, List<GroupedEvent>> _getRelevantGroups() {
-    Map<DateTime, List<GroupedEvent>> selectedEvents = {};
-    for (var key in _groupedEvents.keys) {
-      if (key.isAfter(_currentStartDate) && key.isBefore(_currentEndDate)) {
+    // Keep a bucket if its SPAN [key, key+interval) overlaps the viewport, not
+    // just if its start is strictly inside — otherwise a bucket straddling the
+    // left edge gets dropped and the leftmost bar pops out a notch early.
+    final barMs = _barInterval?.approxMs ?? 0;
+    final selectedEvents = <DateTime, List<GroupedEvent>>{};
+    for (final key in _groupedEvents.keys) {
+      final bucketEnd = key.add(Duration(milliseconds: barMs));
+      if (key.isBefore(_currentEndDate) && bucketEnd.isAfter(_currentStartDate)) {
         selectedEvents[key] = _groupedEvents[key]!;
       }
     }
