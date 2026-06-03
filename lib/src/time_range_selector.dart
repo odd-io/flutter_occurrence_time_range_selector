@@ -254,19 +254,15 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
         return;
       }
 
-      Duration currentRange = _currentEndDate.difference(_currentStartDate);
-      DateTime middlePoint = _currentStartDate.add(currentRange ~/ 2);
-      double zoomChange = newZoomFactor / _zoomFactor;
-
-      Duration newHalfRange = Duration(
-        milliseconds: (currentRange.inMilliseconds * zoomChange / 2).round(),
-      );
+      final zoomChange = newZoomFactor / _zoomFactor;
+      // Anchor on the pinch focal point so that time stays under the fingers.
+      final (newStart, newEnd) =
+          _zoomAround(details.localFocalPoint.dx, zoomChange);
 
       setState(() {
         _zoomFactor = newZoomFactor;
-
-        _currentStartDate = middlePoint.subtract(newHalfRange);
-        _currentEndDate = middlePoint.add(newHalfRange);
+        _currentStartDate = newStart;
+        _currentEndDate = newEnd;
         // bars + labels recomputed in build() via _recompute().
       });
       widget.onRangeChanged?.call(_currentStartDate, _currentEndDate);
@@ -309,21 +305,37 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
         return;
       }
 
-      Duration currentRange = _currentEndDate.difference(_currentStartDate);
-      DateTime middlePoint = _currentStartDate.add(currentRange ~/ 2);
-      Duration newHalfRange = Duration(
-          milliseconds:
-              (currentRange.inMilliseconds * zoomChange ~/ 2).round());
+      // Anchor the zoom on the cursor (not the range midpoint) so the time
+      // under the pointer stays fixed. effectiveZoomChange uses the clamped
+      // factor so range and zoom stay consistent at the min/max boundary.
+      final effectiveZoomChange = newZoomFactor / _zoomFactor;
+      final (newStart, newEnd) =
+          _zoomAround(event.localPosition.dx, effectiveZoomChange);
 
       setState(() {
         _zoomFactor = newZoomFactor;
-
-        _currentStartDate = middlePoint.subtract(newHalfRange);
-        _currentEndDate = middlePoint.add(newHalfRange);
+        _currentStartDate = newStart;
+        _currentEndDate = newEnd;
         // bars + labels recomputed in build() via _recompute().
       });
       widget.onRangeChanged?.call(_currentStartDate, _currentEndDate);
     }
+  }
+
+  /// Scale the visible range by [zoomChange], keeping the instant under
+  /// [pointerX] (local px) fixed — "zoom toward the cursor". Falls back to the
+  /// centre when the width isn't known yet.
+  (DateTime, DateTime) _zoomAround(double pointerX, double zoomChange) {
+    final rangeMs = _currentEndDate.difference(_currentStartDate).inMilliseconds;
+    final f = _widgetWidth > 0 ? (pointerX / _widgetWidth).clamp(0.0, 1.0) : 0.5;
+    final anchorMs =
+        _currentStartDate.millisecondsSinceEpoch + (f * rangeMs).round();
+    final newRangeMs = (rangeMs * zoomChange).round();
+    final newStart = DateTime.fromMillisecondsSinceEpoch(
+        anchorMs - (f * newRangeMs).round());
+    final newEnd = DateTime.fromMillisecondsSinceEpoch(
+        anchorMs + ((1 - f) * newRangeMs).round());
+    return (newStart, newEnd);
   }
 
   Map<DateTime, List<GroupedEvent>> _getRelevantGroups() {
