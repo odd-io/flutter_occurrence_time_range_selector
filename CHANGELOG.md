@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.5
+
+- `minRangeMs`: hard floor for the visible range — zooming can never
+  collapse the viewport below it (degenerate start==end windows were
+  reaching consumers as zero-width filters).
+
 ## 0.0.3
 
 - Enable zooming on touch/mobile devices

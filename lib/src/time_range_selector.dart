@@ -23,6 +23,7 @@ class TimeRangeSelector extends StatefulWidget {
     required this.style,
     this.minZoomFactor = 1,
     this.maxZoomFactor = 31536000000,
+    this.minRangeMs,
     this.highlightGroups = const [],
   });
 
@@ -49,6 +50,13 @@ class TimeRangeSelector extends StatefulWidget {
   final List<HighlightGroup> highlightGroups;
   final double maxZoomFactor;
   final double minZoomFactor;
+
+  /// Hard floor for the visible range, in milliseconds. Zooming can never
+  /// shrink the viewport below this span. Unlike [minZoomFactor] (which is
+  /// ms-per-pixel and drifts with the real widget width), this bounds the
+  /// RANGE itself — the guard that makes degenerate windows (start == end)
+  /// impossible. null = no floor (legacy behavior).
+  final int? minRangeMs;
   final DateTime startDate;
   final TimelineStyle style;
   final Map<String, TagStyle> tagStyles;
@@ -330,7 +338,17 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
     final f = _widgetWidth > 0 ? (pointerX / _widgetWidth).clamp(0.0, 1.0) : 0.5;
     final anchorMs =
         _currentStartDate.millisecondsSinceEpoch + (f * rangeMs).round();
-    final newRangeMs = (rangeMs * zoomChange).round();
+    var newRangeMs = (rangeMs * zoomChange).round();
+    // Range floor: never let zoom collapse the viewport below minRangeMs —
+    // a sub-floor range would otherwise become a degenerate (start == end)
+    // window downstream (the 2026-08-06 "00:59:59 – 00:59:59" filter).
+    final floor = widget.minRangeMs;
+    if (floor != null && newRangeMs < floor) {
+      if (rangeMs <= floor) {
+        return (_currentStartDate, _currentEndDate); // already at the floor
+      }
+      newRangeMs = floor;
+    }
     final newStart = DateTime.fromMillisecondsSinceEpoch(
         anchorMs - (f * newRangeMs).round());
     final newEnd = DateTime.fromMillisecondsSinceEpoch(
