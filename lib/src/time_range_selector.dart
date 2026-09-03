@@ -275,19 +275,6 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
       });
       widget.onRangeChanged?.call(_currentStartDate, _currentEndDate);
     }
-
-    // Handle panning during pinch gesture (touch devices)
-    if (details.scale == 1.0 && details.focalPointDelta.dx != 0) {
-      _processPanUpdate(details.focalPointDelta);
-    }
-  }
-
-  void _handlePanStart(DragStartDetails details) {
-    // Initialize state for mouse panning if needed
-  }
-
-  void _handleMousePanUpdate(DragUpdateDetails details) {
-    _processPanUpdate(details.delta);
   }
 
   void _processPanUpdate(Offset delta) {
@@ -390,13 +377,25 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
                     instance.supportedDevices = {PointerDeviceKind.touch};
                   },
                 ),
-                PanGestureRecognizer:
-                    GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
-                  () => PanGestureRecognizer(),
-                  (PanGestureRecognizer instance) {
-                    instance.onStart = _handlePanStart;
-                    instance.onUpdate = _handleMousePanUpdate;
-                    instance.supportedDevices = {PointerDeviceKind.mouse};
+                // A dedicated axis-drag recognizer for ALL pointer kinds. It
+                // accepts a horizontal drag at the touch-slop (~18px) — half the
+                // Scale recognizer's ~36px — so it wins the gesture arena over an
+                // ancestor axis-drag (e.g. a Scaffold endDrawer edge-swipe) that
+                // otherwise stole one-finger touch drags on iPad. Scale (above)
+                // is now pinch-zoom ONLY. Both feed _processPanUpdate; for a
+                // single pointer exactly one recognizer wins, so no double-pan.
+                HorizontalDragGestureRecognizer:
+                    GestureRecognizerFactoryWithHandlers<
+                        HorizontalDragGestureRecognizer>(
+                  () => HorizontalDragGestureRecognizer(),
+                  (HorizontalDragGestureRecognizer instance) {
+                    instance.onUpdate = (d) => _processPanUpdate(d.delta);
+                    instance.supportedDevices = {
+                      PointerDeviceKind.mouse,
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.stylus,
+                      PointerDeviceKind.trackpad,
+                    };
                   },
                 ),
               },
