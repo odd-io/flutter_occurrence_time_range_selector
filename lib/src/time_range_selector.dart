@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -81,6 +83,22 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   // Current calendar-aligned bar/grouping interval (chosen from range + width).
   CalendarInterval? _barInterval;
 
+  // Controlled-component guard: true while the user is actively driving the
+  // viewport (drag / pinch / a wheel-zoom burst). External [startDate]/[endDate]
+  // prop changes are adopted only while this is false (see [didUpdateWidget]),
+  // so an incoming prop update never stomps an in-progress gesture. The wheel
+  // has no natural "end", so a short cooldown timer closes the burst.
+  bool _gestureActive = false;
+  Timer? _gestureCooldown;
+
+  void _touchGesture() {
+    _gestureActive = true;
+    _gestureCooldown?.cancel();
+    _gestureCooldown = Timer(const Duration(milliseconds: 400), () {
+      _gestureActive = false;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -105,6 +123,30 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
         widget.baseInterval != oldWidget.baseInterval) {
       _barInterval = null; // force re-group on next build
     }
+    // Controlled component: adopt an EXTERNAL window change (the parent drove
+    // startDate/endDate — a new filter, a scene move, a programmatic restore)
+    // into the internal viewport. Skipped while the user is gesturing so it
+    // never fights an in-progress drag/zoom; the parent's own settled commit
+    // echoes back value-equal and is a no-op. Mirrors initState's LOCAL-time
+    // normalization and recomputes the zoom factor so pan/zoom speed matches
+    // the new span; nulls _barInterval so bars + labels re-derive.
+    if (!_gestureActive &&
+        (widget.startDate != oldWidget.startDate ||
+            widget.endDate != oldWidget.endDate)) {
+      _currentStartDate = widget.startDate.toLocal();
+      _currentEndDate = widget.endDate.toLocal();
+      _zoomFactor = _calculateInitialZoomFactor().clamp(
+        widget.minZoomFactor,
+        widget.maxZoomFactor,
+      );
+      _barInterval = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _gestureCooldown?.cancel();
+    super.dispose();
   }
 
   double _calculateInitialZoomFactor() {
@@ -249,10 +291,12 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   }
 
   void _handleScaleStart(ScaleStartDetails details) {
+    _touchGesture();
     _initialScaleZoomFactor = _zoomFactor;
   }
 
   void _handleScaleUpdate(ScaleUpdateDetails details) {
+    _touchGesture();
     // Handle zooming with pinch gesture
     if (details.scale != 1.0 && _initialScaleZoomFactor != null) {
       double newZoomFactor = (_initialScaleZoomFactor! / details.scale)
@@ -278,6 +322,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   }
 
   void _processPanUpdate(Offset delta) {
+    _touchGesture();
     Duration shiftDuration = Duration(
       milliseconds: (_zoomFactor * -delta.dx).round(),
     );
@@ -293,6 +338,7 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
 
   void _handleZoom(PointerSignalEvent event) {
     if (event is PointerScrollEvent) {
+      _touchGesture();
       double zoomChange = event.scrollDelta.dy > 0 ? 1.1 : 0.9;
       final newZoomFactor = (_zoomFactor * zoomChange)
           .clamp(widget.minZoomFactor, widget.maxZoomFactor);

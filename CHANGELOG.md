@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.6
+
+- Controlled component: `TimeRangeSelector` now adopts external
+  `startDate`/`endDate` prop changes into its viewport (previously
+  `didUpdateWidget` ignored them, forcing consumers to remount via key-churn).
+  A gesture guard (drag/pinch + a short wheel-burst cooldown) ensures an
+  incoming prop change never stomps an in-progress gesture; a consumer's own
+  settled commit echoes back value-equal and is a no-op.
+
 ## 0.0.5
 
 - `minRangeMs`: hard floor for the visible range — zooming can never
