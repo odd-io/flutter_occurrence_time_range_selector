@@ -33,7 +33,8 @@ class TimelinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const highlightSpace = 20.0; // reserved for highlights at the top
+    // Reserved for the highlight-dot lane at the top — bars never enter it.
+    final highlightSpace = style.highlightLaneHeight;
     final totalDuration = endDate.difference(startDate);
     if (totalDuration.inMilliseconds <= 0) return;
     final pixelsPerUnit = size.width / totalDuration.inMilliseconds;

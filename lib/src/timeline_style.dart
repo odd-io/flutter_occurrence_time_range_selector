@@ -14,6 +14,7 @@ class TimelineStyle extends Equatable {
     required this.axisLabelStyle,
     required this.backgroundColor,
     this.scaleType = ScaleType.linear,
+    this.highlightLaneHeight = 20.0,
   });
 
   /// The color of the timeline's axis line.
@@ -34,12 +35,19 @@ class TimelineStyle extends Equatable {
   /// The default value is [ScaleType.linear].
   final ScaleType scaleType;
 
+  /// Height in px of the lane reserved at the top of the chart for the
+  /// highlight-group widgets (dots/stars) — bars are scaled into the space
+  /// BELOW it, so highlights and bars never overlap. Hosts that stack two
+  /// dot rows (e.g. selection + highlight) should raise it for clearance.
+  final double highlightLaneHeight;
+
   @override
   List<Object?> get props => [
         axisColor,
         axisLabelStyle,
         backgroundColor,
         scaleType,
+        highlightLaneHeight,
       ];
 }
 

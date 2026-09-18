@@ -273,16 +273,32 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
   List<Widget> _buildHighlights(BoxConstraints constraints) {
     final totalDuration = _currentEndDate.difference(_currentStartDate);
     final pixelsPerUnit = constraints.maxWidth / totalDuration.inMilliseconds;
+    // Bars are CENTERED in their bucket slot (TimelinePainter's barInset),
+    // so a highlight must anchor to the slot CENTER, not the bucket's start
+    // timestamp — same interval expression the painter is handed via
+    // getLabelInterval. The 20px lane is the width already advertised to
+    // builders; Align centers any narrower child (8px dot, 16px star) on it.
+    final slotWidth =
+        (_barInterval?.approxDuration ?? const Duration(days: 1))
+                .inMilliseconds *
+            pixelsPerUnit;
+    const laneWidth = 20.0;
 
     return widget.highlightGroups.expand((group) {
       return group.dates.map((date) {
         final x =
             date.difference(_currentStartDate).inMilliseconds * pixelsPerUnit;
-        if (x >= 0 && x <= constraints.maxWidth) {
+        final center = x + slotWidth / 2;
+        if (center >= 0 && center <= constraints.maxWidth) {
           return Positioned(
-            left: x,
+            left: center - laneWidth / 2,
             top: 0,
-            child: group.builder(context, Size(20, constraints.maxHeight)),
+            width: laneWidth,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child:
+                  group.builder(context, Size(laneWidth, constraints.maxHeight)),
+            ),
           );
         }
         return const SizedBox.shrink();
