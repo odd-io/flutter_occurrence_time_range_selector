@@ -313,6 +313,15 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
 
   void _handleScaleUpdate(ScaleUpdateDetails details) {
     _touchGesture();
+    // ONE ScaleGestureRecognizer drives BOTH gestures on touch — scale is a
+    // superset of pan (flutter/flutter#30099, #115061). The focal-point
+    // translation pans (one finger, or the drift of a two-finger pinch); a
+    // two-finger scale zooms. Handling both in a single recognizer means there
+    // is no sibling recognizer to fight in the arena, so a pinch is never
+    // mis-claimed as a pan (the old bug).
+    if (details.focalPointDelta != Offset.zero) {
+      _processPanUpdate(details.focalPointDelta);
+    }
     // Handle zooming with pinch gesture
     if (details.scale != 1.0 && _initialScaleZoomFactor != null) {
       double newZoomFactor = (_initialScaleZoomFactor! / details.scale)
@@ -439,13 +448,14 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
                     instance.supportedDevices = {PointerDeviceKind.touch};
                   },
                 ),
-                // A dedicated axis-drag recognizer for ALL pointer kinds. It
-                // accepts a horizontal drag at the touch-slop (~18px) — half the
-                // Scale recognizer's ~36px — so it wins the gesture arena over an
-                // ancestor axis-drag (e.g. a Scaffold endDrawer edge-swipe) that
-                // otherwise stole one-finger touch drags on iPad. Scale (above)
-                // is now pinch-zoom ONLY. Both feed _processPanUpdate; for a
-                // single pointer exactly one recognizer wins, so no double-pan.
+                // NON-TOUCH axis-drag: mouse/stylus/trackpad panning only.
+                // TOUCH is deliberately excluded — a two-finger pinch and a
+                // one-finger pan are both handled by the Scale recognizer above
+                // (scale is a superset of pan). Keeping a touch drag here would
+                // re-create the sibling arena fight that made pinch unreliable:
+                // its smaller slop would win the arena before Scale could see
+                // the second finger, locking the gesture to a pan. Pointer
+                // devices that never pinch keep their direct drag here.
                 HorizontalDragGestureRecognizer:
                     GestureRecognizerFactoryWithHandlers<
                         HorizontalDragGestureRecognizer>(
@@ -454,7 +464,6 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
                     instance.onUpdate = (d) => _processPanUpdate(d.delta);
                     instance.supportedDevices = {
                       PointerDeviceKind.mouse,
-                      PointerDeviceKind.touch,
                       PointerDeviceKind.stylus,
                       PointerDeviceKind.trackpad,
                     };
