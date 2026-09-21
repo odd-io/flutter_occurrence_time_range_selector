@@ -22,6 +22,7 @@ class TimeRangeSelector extends StatefulWidget {
     this.baseInterval,
     required this.tagStyles,
     this.onRangeChanged,
+    this.onInteractionEnd,
     required this.style,
     this.minZoomFactor = 1,
     this.maxZoomFactor = 31536000000,
@@ -30,6 +31,14 @@ class TimeRangeSelector extends StatefulWidget {
   });
 
   final Function(DateTime, DateTime)? onRangeChanged;
+
+  /// Fired once when a touch/mouse gesture ENDS (finger lifts / drag release),
+  /// as opposed to [onRangeChanged] which streams during the gesture. The
+  /// controlled parent uses this as the deterministic "the interaction is over"
+  /// signal — to flush a pending commit and drop any live-preview state — so
+  /// that preview state cannot outlive the gesture. Not fired for wheel-zoom
+  /// (which has no natural end; the parent debounces that path instead).
+  final VoidCallback? onInteractionEnd;
   final DateTime endDate;
 
   /// Per-occurrence input (one [TimeEvent] per event). The widget counts
@@ -445,6 +454,10 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
                   (ScaleGestureRecognizer instance) {
                     instance.onStart = _handleScaleStart;
                     instance.onUpdate = _handleScaleUpdate;
+                    // Touch pinch/pan END — the deterministic "finger lifted"
+                    // signal the controlled parent needs to flush its commit and
+                    // drop live-preview state (fixes the mobile stuck-scrub).
+                    instance.onEnd = (_) => widget.onInteractionEnd?.call();
                     instance.supportedDevices = {PointerDeviceKind.touch};
                   },
                 ),
@@ -462,6 +475,9 @@ class TimeRangeSelectorState extends State<TimeRangeSelector> {
                   () => HorizontalDragGestureRecognizer(),
                   (HorizontalDragGestureRecognizer instance) {
                     instance.onUpdate = (d) => _processPanUpdate(d.delta);
+                    // Mouse/stylus/trackpad pan END — same "interaction over"
+                    // signal as the touch path above.
+                    instance.onEnd = (_) => widget.onInteractionEnd?.call();
                     instance.supportedDevices = {
                       PointerDeviceKind.mouse,
                       PointerDeviceKind.stylus,
